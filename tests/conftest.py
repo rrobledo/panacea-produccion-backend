@@ -13,6 +13,7 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 TRUNCATE_TABLES = [
+    "users",
     "costos_cuentacorrienteproveedorafect",
     "costos_cuentacorrienteproveedordetalle",
     "costos_cuentacorrienteproveedor",

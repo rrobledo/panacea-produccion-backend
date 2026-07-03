@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.auth.router import router as auth_router
 from app.config import get_settings
 from app.routers import (
     clientes,
@@ -17,6 +18,7 @@ from app.routers import (
     planning,
     produccion_stats,
     productos,
+    profile,
     programacion,
     proveedores,
     remitos,
@@ -75,3 +77,5 @@ app.include_router(ventas.router, prefix="/costos")
 app.include_router(planning.router, prefix="/costos")
 app.include_router(programacion.router, prefix="/costos")
 app.include_router(cron.router)
+app.include_router(auth_router)
+app.include_router(profile.router)

@@ -27,6 +27,11 @@ cp .env.example .env
 | `API_KEYS` | Comma-separated list of accepted `X-API-Key` values for mutating (POST/PUT/PATCH/DELETE) requests. |
 | `CRON_SECRET` | Separate secret required (as `Authorization: Bearer <secret>`) on the scheduled cascade endpoint. |
 | `CORS_ORIGINS` | Comma-separated list of allowed browser origins. No wildcard. |
+| `SECRET_KEY` | Signing key for auth JWTs and OAuth `state` tokens. No insecure default — any `/auth/*` or `/profile/*` request fails with a 500 if unset. |
+| `ACCESS_TOKEN_EXPIRE_DAYS` | How long an issued login JWT stays valid, in days. Defaults to `7`. |
+| `BASE_URL` | Used to build the Google OAuth2 callback `redirect_uri` (`<BASE_URL>/auth/google/callback`). Defaults to `http://localhost:8000`. |
+| `FRONTEND_URLS` | Comma-separated allow-list of frontend URLs OAuth is permitted to redirect back to after login. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth2 Client credentials — see "Authentication" below. |
 
 `DATABASE_URL` is only required for routes that hit the database — the app
 boots and `/health` works without it.
@@ -109,6 +114,50 @@ the Vercel project settings — never committed to source.
 Vercel automatically sends `Authorization: Bearer $CRON_SECRET` on cron
 invocations once `CRON_SECRET` is set as a project env var — no extra
 wiring needed for `/internal/cron/monthly-cascade`'s auth check.
+
+## Authentication
+
+Separate from the `X-API-Key` machine-to-machine check above, the service
+has a `users` table (`app/models/user.py`) backing individual user login —
+email/password or Google OAuth2 — and role-based authorization
+(`admin`/`user`, default `user`). See
+`openspec/changes/add-auth-oauth-and-custom/design.md` for the full
+rationale.
+
+- `POST /auth/register` — public self-service signup with email + password.
+  Role is always `user`; there is no way to self-assign `admin`.
+- `POST /auth/token` — local email/password login (OAuth2 password grant
+  form: `username`, `password`), returns a bearer JWT.
+- `GET /auth/google` / `GET /auth/google/callback` — Google OAuth2
+  Authorization Code flow. The verified Google email must already match an
+  existing `users` row (from `/auth/register` or manual provisioning) — an
+  unmatched email is rejected with 404, no account is auto-created.
+- `GET /profile/me` — returns the authenticated caller's `id`, `email`,
+  `role`, `email_verified`. Requires `Authorization: Bearer <token>`.
+
+**Promoting a user to `admin`** is a manual DB update in this change (no
+management endpoint yet):
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'someone@example.com';
+```
+
+The promoted user must log in again — the JWT bakes in the role at issuance
+time, so an already-issued token keeps its old role until it's reissued or
+expires (`ACCESS_TOKEN_EXPIRE_DAYS`).
+
+**Setting up a Google OAuth Client** (for local dev or staging):
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) → APIs &
+   Services → Credentials, create an OAuth Client ID of type
+   "Web application".
+2. Add `<BASE_URL>/auth/google/callback` as an authorized redirect URI
+   (e.g. `http://localhost:8000/auth/google/callback` for local dev).
+3. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `.env` from the
+   created client's credentials.
+4. Register a `users` row for the Google account you'll test with (via
+   `POST /auth/register`, or a direct `INSERT`) before attempting
+   `GET /auth/google` — unmatched emails are rejected, not auto-created.
 
 ## `panacea-front` integration note (BREAKING for writes)
 

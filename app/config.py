@@ -11,6 +11,17 @@ class Settings(BaseSettings):
     cron_secret: str = ""
     cors_origins: str = ""
 
+    secret_key: str = ""
+    access_token_expire_days: int = 7
+    base_url: str = "http://localhost:8000"
+    frontend_urls: str = ""
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
+    @property
+    def frontend_urls_set(self) -> set[str]:
+        return {u.strip().rstrip("/") for u in self.frontend_urls.split(",") if u.strip()}
+
     @property
     def sqlalchemy_database_url(self) -> str:
         # asyncpg needs the "postgresql+asyncpg://" scheme and doesn't accept
