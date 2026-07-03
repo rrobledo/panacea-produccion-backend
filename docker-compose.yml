@@ -1,0 +1,16 @@
+services:
+  test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: panacea
+      POSTGRES_PASSWORD: panacea
+      POSTGRES_DB: panacea_test
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./docker/init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U panacea -d panacea_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20

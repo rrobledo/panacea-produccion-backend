@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+
+# Local-only Claude Code permissions/config — has contained real
+# credentials in this project's history (Neon DB password), never commit.
+.claude/settings.local.json
