@@ -67,6 +67,45 @@ export DATABASE_URL="postgres://panacea:panacea@localhost:55432/panacea_test"
 remitos/clientes, analytics) — not the full production schema. Add to it as
 new tables are implemented.
 
+## Database migrations
+
+Schema changes live as numbered, sequential SQL files in `migrations/`
+(`0001_...sql`, `0002_...sql`, ...) — run `ls migrations/` for the current
+list. Each file's own header comment documents what it does and the exact
+command to run it; the pattern is the same for all of them:
+
+```bash
+# Dry run — wraps the file in a transaction and rolls it back, so nothing
+# is actually written. Read the output before trusting it.
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "BEGIN;" -f migrations/0004_drop_orden_compra_numero.sql -c "ROLLBACK;"
+
+# Apply for real — -1 wraps the whole file in one transaction so a failure
+# partway through rolls back cleanly instead of leaving a half-applied migration.
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f migrations/0004_drop_orden_compra_numero.sql
+```
+
+`DATABASE_URL` here is a plain `psql`-compatible connection string (not the
+`postgresql+asyncpg://` form the app uses internally) — for the local
+Docker container that's `postgres://panacea:panacea@localhost:55432/panacea_test`;
+for a real target, use that environment's pooled connection string. Run
+migrations in numeric order — later files may assume earlier ones already
+ran (e.g. `0004` alters a table `0003` creates).
+
+Every migration is written to be idempotent (`CREATE TABLE IF NOT EXISTS`,
+`ADD COLUMN IF NOT EXISTS`, `DROP COLUMN IF EXISTS`, etc.) — safe to re-run
+if you're ever unsure whether one already applied to a given database.
+
+`docker/init-db/*.sql` mirrors these migrations 1:1 for local Postgres
+(one numbered init-db file per migration, same content, applied
+automatically by `docker compose up -d` — but **only on first boot of a
+fresh container/volume**; an already-running local container needs the
+same manual `psql` commands above, exactly like any other target). See
+"Local Postgres (Docker)" above.
+
+Migrations only change schema (tables/columns/triggers). For migrating
+*data* out of the legacy `costos_cuentacorrienteproveedor*` tables into the
+new Compras/Tesorería model, see `scripts/README.md` instead.
+
 ## Run the server locally
 
 ```bash
@@ -78,8 +117,47 @@ uvicorn app.main:app --reload --port 8000
 - Interactive docs: http://localhost:8000/docs
 - Raw OpenAPI schema: http://localhost:8000/openapi.json
 - Ported endpoints are mounted under `/costos` (e.g. `/costos/insumos`,
-  `/costos/proveedores`, `/costos/ctacteprov`), matching
+  `/costos/proveedores`, `/costos/compras`), matching
   `panacea-front`'s existing `<host>/costos/...` base path.
+
+## Compras / Tesorería / Órdenes de Compra (redesign-cuenta-corriente-proveedor)
+
+Normalized replacement for the old flat `costos_cuentacorrienteproveedor`
+model — see
+`openspec/changes/redesign-cuenta-corriente-proveedor/{proposal,design}.md`
+for the full rationale. New endpoints, all under `/costos`:
+
+| Endpoint | Purpose |
+|---|---|
+| `/compras` | Comprobante CRUD (`Compra` + `detalle`/`impuestos`/`adjuntos` sub-resources). Each `detalle` row is `tipo=INSUMO`, `ITEM_GASTO`, or `LIBRE` (free text). `GET` supports `fecha_desde`/`fecha_hasta`, `estado`, `proveedor_id`, and `con_saldo` (true → only comprobantes with `saldo_pendiente > 0`) filters. `POST /compras/{id}/adjuntos` and `GET /compras/{id}/adjuntos/{adjunto_id}` upload/download a receipt image, stored as `bytea` in Postgres (not external object storage) |
+| `/items-gasto` | Catalog of reusable expense concepts (e.g. "Flete"), referenced from `Compra` `detalle` rows |
+| `/pagos` | Payment CRUD, multi-`medio` splits, `/aplicaciones` against one or more compras. `POST /pagos/{id}/adjuntos` and `GET /pagos/{id}/adjuntos/{adjunto_id}` — same DB-stored attachment model as `Compra` |
+| `/proveedores/{id}/cuenta-corriente` | Per-proveedor Debe/Haber ledger, balance always derived, never stored |
+| `/cuenta-corriente/resumen` | Dashboard summary (facturas pendientes / gastos) for a date range |
+| `/cuenta-corriente/saldos` | Outstanding balance per proveedor (`total_pendiente` + `proveedores: [{proveedor_id, proveedor_nombre, saldo}]`), derived from `Compra.saldo_pendiente`, proveedores with saldo 0 omitted |
+| `/libro-iva-compras` | Derived VAT purchase ledger report by `periodo` |
+| `/ordenes-compra` | Purchase order CRUD + reception tracking |
+
+**`/ctacteprov*` has been retired.** Per this change's design (`design.md`
+D6, sequenced cutover), the legacy routes stayed up until
+`panacea-produccion` was confirmed deployed against the new endpoints
+above; that confirmation has happened, so the legacy routes, their
+service, and their schemas were removed from the write path (task 10.2 in
+`tasks.md`). The legacy model (`app/models/cuenta_corriente.py`) remains,
+read-only, for the backfill script below.
+
+Attachments (`CompraAdjunto`/`PagoAdjunto`) store the file's bytes
+directly in a Postgres `bytea` column, deferred so listing/reading a
+`Compra`/`Pago` never pulls image bytes over the wire — only `GET
+.../adjuntos/{adjunto_id}` does. No external object storage is involved.
+
+The one-time backfill from the legacy `costos_cuentacorrienteproveedor*`
+tables to the new schema is `scripts/migrate_ctacteprov_to_compras.py`
+(dry-run by default; `--apply` to commit; `--skip-images` to skip
+decoding/embedding the legacy `image`/`image2` blobs for a faster
+schema/data-only run). Legacy tables are never dropped — they remain
+as read-only historical archive. See `scripts/README.md` for step-by-step
+usage and how to configure which database it targets.
 
 ## Run the tests
 

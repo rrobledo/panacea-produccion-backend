@@ -14,6 +14,17 @@ TEST_DATABASE_URL = os.environ.get(
 
 TRUNCATE_TABLES = [
     "users",
+    "compras_movimiento_cc",
+    "compras_pago_aplicacion",
+    "compras_pago_medio",
+    "compras_pago",
+    "compras_compra_adjunto",
+    "compras_compra_impuesto",
+    "compras_compra_detalle",
+    "compras_orden_compra_detalle",
+    "compras_compra",
+    "compras_orden_compra",
+    "compras_item_gasto",
     "costos_cuentacorrienteproveedorafect",
     "costos_cuentacorrienteproveedordetalle",
     "costos_cuentacorrienteproveedor",
