@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,11 +11,16 @@ from app.auth.router import router as auth_router
 from app.config import get_settings
 from app.routers import (
     clientes,
+    compras,
     costeo,
     cron,
-    cuenta_corriente,
+    cuenta_corriente_ledger,
     insumos,
+    item_gasto,
+    libro_iva,
     misc,
+    ordenes_compra,
+    pagos,
     planning,
     produccion_stats,
     productos,
@@ -45,7 +51,12 @@ app.add_middleware(
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": exc.errors()})
+    # jsonable_encoder (not a raw dict) because pydantic error dicts can
+    # embed a `ctx.error` exception instance (e.g. from a field_validator
+    # raising ValueError) that plain json.dumps can't serialize.
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST, content={"detail": jsonable_encoder(exc.errors())}
+    )
 
 
 @app.exception_handler(SQLAlchemyError)
@@ -64,9 +75,14 @@ async def health() -> dict[str, str]:
 # Mounted under /costos to match panacea-front's existing base URL
 # (`<host>/costos/...`), so only the host needs to change for ported routes.
 app.include_router(insumos.router, prefix="/costos")
+app.include_router(item_gasto.router, prefix="/costos")
 app.include_router(proveedores.router, prefix="/costos")
-app.include_router(cuenta_corriente.router, prefix="/costos")
-app.include_router(cuenta_corriente.resumen_router, prefix="/costos")
+app.include_router(compras.router, prefix="/costos")
+app.include_router(pagos.router, prefix="/costos")
+app.include_router(cuenta_corriente_ledger.proveedor_ledger_router, prefix="/costos")
+app.include_router(cuenta_corriente_ledger.resumen_router, prefix="/costos")
+app.include_router(libro_iva.router, prefix="/costos")
+app.include_router(ordenes_compra.router, prefix="/costos")
 app.include_router(productos.router, prefix="/costos")
 app.include_router(costeo.router, prefix="/costos")
 app.include_router(misc.router, prefix="/costos")
