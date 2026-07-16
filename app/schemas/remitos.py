@@ -2,56 +2,64 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.schemas.clientes import ClienteRead
+from app.schemas.productos import ProductoRead
+
 
 class RemitoDetalleCreate(BaseModel):
-    producto: int
+    producto_id: int
     cantidad: int
-    entregado: int | None = None
     observaciones: str | None = None
+    # Not part of mayorista's RemitoDetalleCreate contract (it never lets a
+    # caller set this at create/update time) — kept as an extra optional
+    # field since callers that don't send it behave identically to mayorista.
+    entregado: int | None = None
 
 
 class RemitoDetalleRead(BaseModel):
     id: int
-    remito: int | None
-    producto: int
-    producto_id: str
-    producto_nombre: str
+    producto_id: int
     cantidad: int
     entregado: int | None
     observaciones: str | None
+    producto: ProductoRead | None
 
     @classmethod
     def from_orm_row(cls, row) -> "RemitoDetalleRead":
         return cls(
             id=row.id,
-            remito=row.remito_id,
-            producto=row.producto_id,
-            producto_id=str(row.producto_id),
-            producto_nombre=row.producto.nombre,
+            producto_id=row.producto_id,
             cantidad=row.cantidad,
             entregado=row.entregado,
             observaciones=row.observaciones,
+            producto=ProductoRead.model_validate(row.producto) if row.producto else None,
         )
 
 
+class EstadoTransitionRequest(BaseModel):
+    nuevo_estado: str
+
+
 class RemitoCreate(BaseModel):
-    cliente: int | None = None
-    observaciones: str | None = None
+    cliente_id: int
     vendedor: str
+    observaciones: str | None = None
     fecha_entrega: datetime
-    fecha_preparacion: datetime | None = None
-    fecha_listo: datetime | None = None
-    fecha_despacho: datetime | None = None
-    fecha_recibido: datetime | None = None
-    fecha_facturacion: datetime | None = None
-    productos: list[RemitoDetalleCreate] = []
+    detalles: list[RemitoDetalleCreate] = []
+
+
+class RemitoUpdate(BaseModel):
+    cliente_id: int | None = None
+    vendedor: str | None = None
+    observaciones: str | None = None
+    fecha_entrega: datetime | None = None
+    detalles: list[RemitoDetalleCreate] | None = None
 
 
 class RemitoRead(BaseModel):
     id: int
-    cliente_id: str | None
-    cliente_nombre: str | None
-    cliente: int | None
+    cliente_id: int | None
+    cliente: ClienteRead | None
     estado: str
     observaciones: str | None
     vendedor: str
@@ -62,15 +70,14 @@ class RemitoRead(BaseModel):
     fecha_despacho: datetime | None
     fecha_recibido: datetime | None
     fecha_facturacion: datetime | None
-    productos: list[RemitoDetalleRead]
+    detalles: list[RemitoDetalleRead]
 
     @classmethod
     def from_orm_row(cls, row) -> "RemitoRead":
         return cls(
             id=row.id,
-            cliente_id=str(row.cliente_id) if row.cliente_id is not None else None,
-            cliente_nombre=row.cliente.nom1 + ", " + row.cliente.nom2 if row.cliente else None,
-            cliente=row.cliente_id,
+            cliente_id=row.cliente_id,
+            cliente=ClienteRead.from_orm_row(row.cliente) if row.cliente else None,
             estado=row.estado,
             observaciones=row.observaciones,
             vendedor=row.vendedor,
@@ -81,5 +88,5 @@ class RemitoRead(BaseModel):
             fecha_despacho=row.fecha_despacho,
             fecha_recibido=row.fecha_recibido,
             fecha_facturacion=row.fecha_facturacion,
-            productos=[RemitoDetalleRead.from_orm_row(d) for d in row.productos],
+            detalles=[RemitoDetalleRead.from_orm_row(d) for d in row.detalles],
         )

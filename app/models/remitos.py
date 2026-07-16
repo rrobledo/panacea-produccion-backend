@@ -23,21 +23,25 @@ class Remitos(Base):
     fecha_recibido: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     fecha_facturacion: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
-    productos: Mapped[list["RemitoDetalles"]] = relationship(
+    detalles: Mapped[list["RemitoDetalles"]] = relationship(
         back_populates="remito", cascade="all, delete-orphan", lazy="selectin"
     )
 
     @property
     def estado(self) -> str:
+        # Matches panacea-mayorista-backend's EstadoRemito/derive_estado
+        # vocabulary and precedence exactly, for API compatibility.
+        if self.fecha_facturacion:
+            return "facturado"
         if self.fecha_recibido:
-            return "ENTREGADO"
+            return "en_entrega"
         if self.fecha_despacho:
-            return "EN CAMINO"
+            return "listo_entregar"
         if self.fecha_listo:
-            return "PREPARADO"
+            return "preparando"
         if self.fecha_preparacion:
-            return "EN_PREPARACION"
-        return "PENDIENTE"
+            return "en_produccion"
+        return "creado"
 
 
 class RemitoDetalles(Base):
@@ -50,5 +54,5 @@ class RemitoDetalles(Base):
     entregado: Mapped[int | None] = mapped_column(Integer, default=None)
     observaciones: Mapped[str | None] = mapped_column(String(1000), default=None)
 
-    remito: Mapped[Remitos] = relationship(back_populates="productos")
+    remito: Mapped[Remitos] = relationship(back_populates="detalles")
     producto = relationship("Productos", lazy="joined")

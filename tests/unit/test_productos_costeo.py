@@ -57,6 +57,36 @@ async def test_list_productos_with_nombre_filter_orders_by_nombre_only(client, s
     assert names == ["Torta Chocolate", "Torta Vainilla"]
 
 
+async def test_list_productos_default_excludes_disabled(client, session):
+    await _make_producto(session, nombre="Habilitado", habilitado=True)
+    await _make_producto(session, nombre="Deshabilitado", habilitado=False)
+
+    response = await client.get("/costos/productos")
+    assert response.status_code == 200
+    names = [p["nombre"] for p in response.json()]
+    assert names == ["Habilitado"]
+
+
+async def test_list_productos_solo_habilitados_false_includes_disabled(client, session):
+    await _make_producto(session, nombre="Habilitado", habilitado=True)
+    await _make_producto(session, nombre="Deshabilitado", habilitado=False)
+
+    response = await client.get("/costos/productos", params={"solo_habilitados": "false"})
+    assert response.status_code == 200
+    names = {p["nombre"] for p in response.json()}
+    assert names == {"Habilitado", "Deshabilitado"}
+
+
+async def test_list_productos_filter_composes_with_nombre_search(client, session):
+    await _make_producto(session, nombre="Pan Habilitado", habilitado=True)
+    await _make_producto(session, nombre="Pan Deshabilitado", habilitado=False)
+
+    response = await client.get("/costos/productos", params={"nombre": "pan", "solo_habilitados": "true"})
+    assert response.status_code == 200
+    names = [p["nombre"] for p in response.json()]
+    assert names == ["Pan Habilitado"]
+
+
 async def test_create_producto_does_not_cascade_into_planning(client, session):
     response = await client.post(
         "/costos/productos",

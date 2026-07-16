@@ -10,11 +10,15 @@ router = APIRouter(prefix="/productos", tags=["productos"])
 
 
 @router.get("", response_model=list[ProductoRead])
-async def list_productos(nombre: str | None = None, session: AsyncSession = Depends(get_session)):
+async def list_productos(
+    nombre: str | None = None, solo_habilitados: bool = True, session: AsyncSession = Depends(get_session)
+):
     if nombre:
         stmt = select(Productos).where(Productos.nombre.ilike(f"%{nombre}%")).order_by(Productos.nombre)
     else:
         stmt = select(Productos).order_by(Productos.prioridad, Productos.nombre)
+    if solo_habilitados:
+        stmt = stmt.where(Productos.habilitado.is_(True))
     result = await session.execute(stmt)
     return result.scalars().all()
 

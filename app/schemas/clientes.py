@@ -12,9 +12,32 @@ class ClienteCreate(BaseModel):
 
 
 class ClienteRead(BaseModel):
-    id: int
-    nombre: str
+    idcliente: int
+    nom1: str | None
+    nom2: str | None
+    cuit: str | None
+    direccion: str | None
+    localidad: str | None
+    provincia: str | None
+    tel1: str | None
+    celular: str | None
+    email1: str | None
+    personacontacto: str | None
+    activo: int | None
 
     @classmethod
     def from_orm_row(cls, row) -> "ClienteRead":
-        return cls(id=row.id, nombre=f"{row.nom1}, {row.nom2}")
+        return cls(
+            idcliente=row.id,
+            nom1=row.nom1,
+            nom2=row.nom2,
+            cuit=row.cuit,
+            direccion=row.direccion,
+            localidad=row.localidad,
+            provincia=row.provincia,
+            tel1=row.tel1,
+            celular=row.celular,
+            email1=row.email1,
+            personacontacto=row.personacontacto,
+            activo=row.activo,
+        )

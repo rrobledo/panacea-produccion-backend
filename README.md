@@ -159,6 +159,25 @@ schema/data-only run). Legacy tables are never dropped — they remain
 as read-only historical archive. See `scripts/README.md` for step-by-step
 usage and how to configure which database it targets.
 
+## Remitos reportes / estado (merge-mayorista-remitos-api)
+
+Ported from `panacea-mayorista-backend` — see
+`openspec/changes/merge-mayorista-remitos-api/{proposal,design}.md`. New
+endpoints, all under `/costos`:
+
+| Endpoint | Purpose |
+|---|---|
+| `/remitos-reportes/pendientes-entrega` | All remitos ordered by `fecha_entrega` ascending. Despite the name, no estado/fecha filter is applied — matches mayorista's current behavior, not its stale docstring |
+| `/remitos-reportes/pendientes-por-dia` | Same unfiltered set grouped by delivery day, with per-estado counts. Optional `fecha_desde`/`fecha_hasta` |
+| `/remitos-reportes/productos-pendientes-por-dia` | Pending product quantities (`cantidad - entregado`) for remitos not yet invoiced (`fecha_facturacion IS NULL`), grouped by delivery day then by `Productos.responsable`. Optional `fecha_desde`/`fecha_hasta` |
+| `PATCH /remitos/{id}/estado` | Advance a remito's estado one step (`PENDIENTE → EN_PREPARACION → PREPARADO → EN CAMINO → ENTREGADO`); rejects skipped/backward transitions with 422 |
+
+**BREAKING**: `PUT`/`DELETE /remitos/{id}` now reject with 422 once a
+remito's estado has advanced past `PENDIENTE` — use the new `PATCH
+.../estado` endpoint for state changes instead. `GET /productos` now
+defaults to `solo_habilitados=true` (excludes disabled productos); pass
+`solo_habilitados=false` for the old behavior.
+
 ## Run the tests
 
 Start the local Postgres container first (see above), then:
