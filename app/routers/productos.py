@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_session, require_api_key
+from app.deps import get_session
 from app.models.productos import Costos, Productos
 from app.schemas.productos import CostoCreate, CostoRead, ProductoCreate, ProductoRead
 
@@ -23,7 +23,7 @@ async def list_productos(
     return result.scalars().all()
 
 
-@router.post("", response_model=ProductoRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_api_key)])
+@router.post("", response_model=ProductoRead, status_code=status.HTTP_201_CREATED)
 async def create_producto(payload: ProductoCreate, session: AsyncSession = Depends(get_session)):
     producto = Productos(**payload.model_dump())
     session.add(producto)
@@ -44,7 +44,7 @@ async def get_producto(producto_id: int, session: AsyncSession = Depends(get_ses
     return await _get_producto_or_404(session, producto_id)
 
 
-@router.put("/{producto_id}", response_model=ProductoRead, dependencies=[Depends(require_api_key)])
+@router.put("/{producto_id}", response_model=ProductoRead)
 async def update_producto(producto_id: int, payload: ProductoCreate, session: AsyncSession = Depends(get_session)):
     producto = await _get_producto_or_404(session, producto_id)
     for field, value in payload.model_dump().items():
@@ -54,7 +54,7 @@ async def update_producto(producto_id: int, payload: ProductoCreate, session: As
     return producto
 
 
-@router.delete("/{producto_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_api_key)])
+@router.delete("/{producto_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_producto(producto_id: int, session: AsyncSession = Depends(get_session)):
     producto = await _get_producto_or_404(session, producto_id)
     await session.delete(producto)
@@ -72,7 +72,6 @@ async def list_costos(producto_id: int, session: AsyncSession = Depends(get_sess
     "/{producto_id}/costos",
     response_model=CostoRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_api_key)],
 )
 async def create_costo(producto_id: int, payload: CostoCreate, session: AsyncSession = Depends(get_session)):
     await _get_producto_or_404(session, producto_id)
@@ -91,9 +90,7 @@ async def _get_costo_or_404(session: AsyncSession, producto_id: int, costo_id: i
     return row
 
 
-@router.put(
-    "/{producto_id}/costos/{costo_id}", response_model=CostoRead, dependencies=[Depends(require_api_key)]
-)
+@router.put("/{producto_id}/costos/{costo_id}", response_model=CostoRead)
 async def update_costo(
     producto_id: int, costo_id: int, payload: CostoCreate, session: AsyncSession = Depends(get_session)
 ):
@@ -108,7 +105,6 @@ async def update_costo(
 @router.delete(
     "/{producto_id}/costos/{costo_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_api_key)],
 )
 async def delete_costo(producto_id: int, costo_id: int, session: AsyncSession = Depends(get_session)):
     costo = await _get_costo_or_404(session, producto_id, costo_id)

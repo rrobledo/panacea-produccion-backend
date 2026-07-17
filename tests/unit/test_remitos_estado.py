@@ -2,10 +2,6 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from app.config import get_settings
-from app.deps import require_api_key
-from app.main import app
-
 
 async def _make_cliente(session, idcliente, nom1="Juan", nom2="Garcia"):
     await session.execute(
@@ -60,23 +56,6 @@ async def test_backward_transition_is_rejected(client, session):
 
     resp = await client.patch(f"/costos/remitos/{rid}/estado", json={"nuevo_estado": "creado"})
     assert resp.status_code == 422
-
-
-async def test_transition_without_api_key_is_rejected(client, session, monkeypatch):
-    await _make_cliente(session, 5)
-    remito = await _create_remito(client, 5)
-
-    monkeypatch.setenv("API_KEYS", "realkey123")
-    get_settings.cache_clear()
-    app.dependency_overrides.pop(require_api_key, None)
-    try:
-        resp = await client.patch(f"/costos/remitos/{remito['id']}/estado", json={"nuevo_estado": "en_produccion"})
-        assert resp.status_code == 401
-    finally:
-        get_settings.cache_clear()
-
-    check = await client.get(f"/costos/remitos/{remito['id']}")
-    assert check.json()["estado"] == "creado"
 
 
 async def test_put_succeeds_while_creado(client, session):

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_session, require_api_key
+from app.deps import get_session
 from app.models.item_gasto import ItemGasto
 from app.schemas.item_gasto import ItemGastoCreate, ItemGastoRead
 
@@ -18,9 +18,7 @@ async def list_items_gasto(nombre: str | None = None, session: AsyncSession = De
     return result.scalars().all()
 
 
-@router.post(
-    "", response_model=ItemGastoRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_api_key)]
-)
+@router.post("", response_model=ItemGastoRead, status_code=status.HTTP_201_CREATED)
 async def create_item_gasto(payload: ItemGastoCreate, session: AsyncSession = Depends(get_session)):
     item_gasto = ItemGasto(**payload.model_dump())
     session.add(item_gasto)
@@ -37,7 +35,7 @@ async def get_item_gasto(item_gasto_id: int, session: AsyncSession = Depends(get
     return item_gasto
 
 
-@router.put("/{item_gasto_id}", response_model=ItemGastoRead, dependencies=[Depends(require_api_key)])
+@router.put("/{item_gasto_id}", response_model=ItemGastoRead)
 async def update_item_gasto(item_gasto_id: int, payload: ItemGastoCreate, session: AsyncSession = Depends(get_session)):
     item_gasto = await session.get(ItemGasto, item_gasto_id)
     if item_gasto is None:
@@ -49,7 +47,7 @@ async def update_item_gasto(item_gasto_id: int, payload: ItemGastoCreate, sessio
     return item_gasto
 
 
-@router.delete("/{item_gasto_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_api_key)])
+@router.delete("/{item_gasto_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item_gasto(item_gasto_id: int, session: AsyncSession = Depends(get_session)):
     item_gasto = await session.get(ItemGasto, item_gasto_id)
     if item_gasto is None:

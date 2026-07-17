@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_session, require_api_key
+from app.deps import get_session
 from app.services import programacion_service
 
 router = APIRouter(tags=["programacion"])
@@ -20,7 +20,7 @@ async def list_programacion(
     return await programacion_service.get_programacion(session, anio, mes, responsable, semana)
 
 
-@router.post("/programacion", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_api_key)])
+@router.post("/programacion", status_code=status.HTTP_204_NO_CONTENT)
 async def bulk_update_programacion(payload: list[dict], session: AsyncSession = Depends(get_session)):
     await programacion_service.update_programacion(session, payload)
 
@@ -32,7 +32,7 @@ async def list_programacion_columnas(
     return await programacion_service.get_programacion_columnas(session, anio, mes, semana)
 
 
-@router.post("/programacion/generate", dependencies=[Depends(require_api_key)])
+@router.post("/programacion/generate")
 async def generate_programacion(
     year: int = datetime.now().year,
     month: int = datetime.now().month,
@@ -47,7 +47,7 @@ async def generate_programacion(
     )
 
 
-@router.post("/programacion/copy-week", dependencies=[Depends(require_api_key)])
+@router.post("/programacion/copy-week")
 async def copy_week(
     from_year: int,
     from_week: int,

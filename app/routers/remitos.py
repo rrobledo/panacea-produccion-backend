@@ -5,7 +5,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.deps import get_session, require_api_key
+from app.deps import get_session
 from app.models.remitos import RemitoDetalles, Remitos
 from app.schemas.remitos import EstadoTransitionRequest, RemitoCreate, RemitoRead, RemitoUpdate
 from app.services import remitos_service as service
@@ -76,7 +76,7 @@ async def list_remitos(
     return [RemitoRead.from_orm_row(row) for row in result.unique().scalars().all()]
 
 
-@router.post("", response_model=RemitoRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_api_key)])
+@router.post("", response_model=RemitoRead, status_code=status.HTTP_201_CREATED)
 async def create_remito(payload: RemitoCreate, session: AsyncSession = Depends(get_session)):
     remito = await service.create_remito(session, payload)
     return RemitoRead.from_orm_row(remito)
@@ -96,7 +96,7 @@ def _ensure_creado(remito: Remitos) -> None:
         )
 
 
-@router.patch("/{remito_id}/estado", response_model=RemitoRead, dependencies=[Depends(require_api_key)])
+@router.patch("/{remito_id}/estado", response_model=RemitoRead)
 async def transition_estado(
     remito_id: int, payload: EstadoTransitionRequest, session: AsyncSession = Depends(get_session)
 ):
@@ -105,7 +105,7 @@ async def transition_estado(
     return RemitoRead.from_orm_row(remito)
 
 
-@router.put("/{remito_id}", response_model=RemitoRead, dependencies=[Depends(require_api_key)])
+@router.put("/{remito_id}", response_model=RemitoRead)
 async def update_remito(remito_id: int, payload: RemitoUpdate, session: AsyncSession = Depends(get_session)):
     remito = await service.get_remito(session, remito_id)
     _ensure_creado(remito)
@@ -113,7 +113,7 @@ async def update_remito(remito_id: int, payload: RemitoUpdate, session: AsyncSes
     return RemitoRead.from_orm_row(remito)
 
 
-@router.delete("/{remito_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_api_key)])
+@router.delete("/{remito_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_remito(remito_id: int, session: AsyncSession = Depends(get_session)):
     remito = await service.get_remito(session, remito_id)
     _ensure_creado(remito)

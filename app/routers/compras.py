@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_session, require_api_key
+from app.deps import get_session
 from app.schemas.compra import (
     CompraAdjuntoRead,
     CompraCreate,
@@ -37,7 +37,6 @@ async def list_compras(
     "",
     response_model=CompraDetailRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_api_key)],
 )
 async def create_compra(payload: CompraCreate, session: AsyncSession = Depends(get_session)):
     return await service.create_compra(session, payload)
@@ -48,12 +47,12 @@ async def get_compra(compra_id: int, session: AsyncSession = Depends(get_session
     return await service.get_compra(session, compra_id, with_detail=True)
 
 
-@router.put("/{compra_id}", response_model=CompraDetailRead, dependencies=[Depends(require_api_key)])
+@router.put("/{compra_id}", response_model=CompraDetailRead)
 async def update_compra(compra_id: int, payload: CompraUpdate, session: AsyncSession = Depends(get_session)):
     return await service.update_compra(session, compra_id, payload)
 
 
-@router.delete("/{compra_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_api_key)])
+@router.delete("/{compra_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_compra(compra_id: int, session: AsyncSession = Depends(get_session)):
     await service.delete_compra(session, compra_id)
 
@@ -62,7 +61,6 @@ async def delete_compra(compra_id: int, session: AsyncSession = Depends(get_sess
     "/{compra_id}/detalle",
     response_model=CompraDetailRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_api_key)],
 )
 async def add_detalle(
     compra_id: int,
@@ -77,7 +75,6 @@ async def add_detalle(
     "/{compra_id}/impuestos",
     response_model=CompraDetailRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_api_key)],
 )
 async def add_impuestos(
     compra_id: int,
@@ -92,7 +89,6 @@ async def add_impuestos(
     "/{compra_id}/adjuntos",
     response_model=CompraAdjuntoRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_api_key)],
 )
 async def upload_adjunto(
     compra_id: int,
