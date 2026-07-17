@@ -120,6 +120,35 @@ async def test_list_compras_filters_by_con_saldo(client):
     assert pendiente_id not in {c["id"] for c in sin_saldo}
 
 
+async def test_list_compras_orders_by_created_at_descending(client):
+    proveedor = await _create_proveedor(client)
+
+    async def _create(fecha, numero):
+        response = await client.post(
+            "/costos/compras",
+            json={
+                "proveedor_id": proveedor["id"],
+                "tipo_comprobante": "FACTURA_A",
+                "numero": numero,
+                "fecha": fecha.isoformat(),
+                "condicion_pago": "CUENTA_CORRIENTE",
+                "detalle": [{"descripcion": "Item", "cantidad": 1, "precio_unitario": 1000}],
+            },
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    # created first but with a *later* business fecha, and vice versa —
+    # proves ordering follows created_at (insertion order), not fecha.
+    created_first = await _create(date(2026, 6, 1), "F1")
+    created_second = await _create(date(2026, 1, 1), "F2")
+
+    assert created_first["created_at"] is not None
+
+    listed = (await client.get("/costos/compras", params={"proveedor_id": proveedor["id"]})).json()
+    assert [c["id"] for c in listed] == [created_second["id"], created_first["id"]]
+
+
 async def test_reject_unknown_compra_impuesto_tipo(client):
     proveedor = await _create_proveedor(client)
     response = await client.post(

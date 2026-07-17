@@ -88,6 +88,7 @@ class PagoRead(BaseModel):
     importe: float
     estado: str
     observaciones: str | None
+    created_at: datetime
 
 
 class PagoDetailRead(PagoRead):

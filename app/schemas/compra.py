@@ -156,6 +156,7 @@ class CompraRead(BaseModel):
     total: float
     saldo_pendiente: float
     estado: CompraEstado
+    created_at: datetime
 
 
 class CompraDetailRead(CompraRead):

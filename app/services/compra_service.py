@@ -197,7 +197,7 @@ async def list_compras(
     proveedor_id: int | None = None,
     con_saldo: bool | None = None,
 ) -> list[Compra]:
-    stmt = select(Compra).order_by(Compra.fecha.desc())
+    stmt = select(Compra).order_by(Compra.created_at.desc(), Compra.id.desc())
     if fecha_desde is not None:
         stmt = stmt.where(Compra.fecha >= fecha_desde)
     if fecha_hasta is not None:
