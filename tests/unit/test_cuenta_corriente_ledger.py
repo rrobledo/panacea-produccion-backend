@@ -88,12 +88,50 @@ async def test_resumen_endpoint(client):
     today = date.today().isoformat()
     await _create_compra(client, proveedor["id"], 1000, numero="F1", fecha=today)
     await _create_compra(client, proveedor["id"], 200, numero="F2", fecha=today, condicion_pago="CONTADO")
+    await client.post(
+        "/costos/pagos",
+        json={
+            "proveedor_id": proveedor["id"],
+            "fecha": today,
+            "importe": 350,
+            "medios": [{"tipo": "EFECTIVO", "importe": 350}],
+        },
+    )
 
     response = await client.get("/costos/cuenta-corriente/resumen", params={"fecha_desde": today, "fecha_hasta": today})
     assert response.status_code == 200
     body = response.json()
     assert body["total_facturas_pendientes"] == 1000
-    assert body["total_gastos"] == 200
+    # total_gastos is every compra in the period regardless of
+    # condicion_pago/estado — not just the ones already paid off.
+    assert body["total_gastos"] == 1200
+    assert body["total_pagos"] == 350
+
+
+async def test_resumen_gastos_and_pagos_are_scoped_to_period(client):
+    proveedor = await _create_proveedor(client)
+    await _create_compra(client, proveedor["id"], 1000, numero="F1", fecha="2026-01-15")
+    await client.post(
+        "/costos/pagos",
+        json={
+            "proveedor_id": proveedor["id"],
+            "fecha": "2026-01-15",
+            "importe": 500,
+            "medios": [{"tipo": "EFECTIVO", "importe": 500}],
+        },
+    )
+
+    response = await client.get(
+        "/costos/cuenta-corriente/resumen",
+        params={"fecha_desde": "2026-02-01", "fecha_hasta": "2026-02-28"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_gastos"] == 0
+    assert body["total_pagos"] == 0
+    # facturas_pendientes is not period-scoped, so it still reflects the
+    # January compra's outstanding balance.
+    assert body["total_facturas_pendientes"] == 1000
 
 
 async def test_saldos_endpoint_groups_by_proveedor(client):

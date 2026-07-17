@@ -1,12 +1,12 @@
 from datetime import date
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.compra import Compra
 from app.models.movimiento_cc import MovimientoCC
-from app.models.pago import Pago, PagoAplicacion
+from app.models.pago import Pago
 from app.models.proveedor import Proveedor
 
 
@@ -117,19 +117,18 @@ async def get_resumen(session: AsyncSession, fecha_desde: date, fecha_hasta: dat
     )
     total_facturas_pendientes = (await session.execute(pendientes_stmt)).scalar_one()
 
-    gastos_stmt = (
-        select(func.coalesce(func.sum(Compra.total), 0.0))
-        .where(Compra.fecha >= fecha_desde, Compra.fecha <= fecha_hasta)
-        .where(
-            or_(
-                Compra.condicion_pago == "CONTADO",
-                Compra.id.in_(select(PagoAplicacion.compra_id)),
-            )
-        )
+    gastos_stmt = select(func.coalesce(func.sum(Compra.total), 0.0)).where(
+        Compra.fecha >= fecha_desde, Compra.fecha <= fecha_hasta
     )
     total_gastos = (await session.execute(gastos_stmt)).scalar_one()
+
+    pagos_stmt = select(func.coalesce(func.sum(Pago.importe), 0.0)).where(
+        Pago.fecha >= fecha_desde, Pago.fecha <= fecha_hasta
+    )
+    total_pagos = (await session.execute(pagos_stmt)).scalar_one()
 
     return {
         "total_facturas_pendientes": float(total_facturas_pendientes),
         "total_gastos": float(total_gastos),
+        "total_pagos": float(total_pagos),
     }
