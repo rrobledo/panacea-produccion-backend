@@ -210,7 +210,7 @@ async def list_compras(
         stmt = stmt.where(Compra.proveedor_id == proveedor_id)
     if con_saldo is not None:
         stmt = stmt.where(Compra.saldo_pendiente > 1 if con_saldo else Compra.saldo_pendiente <= 0)
-    if categoria is not None:
+    if categoria is not None and categoria != "TODOS":
         stmt = stmt.where(Compra.categoria == categoria)
     result = await session.execute(stmt)
     return list(result.scalars().all())
