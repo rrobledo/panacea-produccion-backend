@@ -24,6 +24,7 @@ class Compra(Base):
     fecha: Mapped[date] = mapped_column(Date)
     fecha_vencimiento: Mapped[date | None] = mapped_column(Date, default=None)
     condicion_pago: Mapped[str] = mapped_column(String(20), default="CUENTA_CORRIENTE")
+    categoria: Mapped[str] = mapped_column(String(250), default="MATERIA_PRIMA")
     observaciones: Mapped[str | None] = mapped_column(String(500), default=None)
     subtotal: Mapped[float] = mapped_column(Float, default=0)
     iva: Mapped[float] = mapped_column(Float, default=0)

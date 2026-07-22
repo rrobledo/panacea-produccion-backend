@@ -6,10 +6,13 @@
 -- environments where running that Python script against the target
 -- database isn't an option. It reproduces the same behavior:
 --   - Compra/CompraDetalle/CompraImpuesto/MovimientoCC per legacy FACTURA
---     row, Pago/PagoMedio/MovimientoCC per legacy PAGO row. Every Pago
---     (real or synthetic, see below) carries over the legacy row's own
---     categoria, falling back to 'MATERIA_PRIMA' if blank — same default as
---     the compras_pago.categoria column itself.
+--     row, Pago/PagoMedio/MovimientoCC per legacy PAGO row. Every Compra
+--     carries over its legacy row's own categoria, falling back to
+--     'MATERIA_PRIMA' if blank — same default as the compras_compra.categoria
+--     column itself. compras_pago has no categoria of its own (legacy PAGO
+--     rows have a categoria column too, but a payment can settle multiple
+--     facturas via Afect, so there's no single Compra to attribute it to;
+--     it's simply dropped for those rows).
 --   - Legacy FACTURA rows paid immediately (tipo_pago TRANSFERENCIA or
 --     EFECTIVO) also get a synthetic Pago/PagoMedio/MovimientoCC + a
 --     PagoAplicacion for the full importe_total, dated the same as the
@@ -143,8 +146,8 @@ ORDER BY id;
 
 INSERT INTO compras_compra (
     id, proveedor_id, tipo_comprobante, numero, fecha, fecha_vencimiento,
-    condicion_pago, observaciones, subtotal, iva, percepciones, impuestos,
-    total, saldo_pendiente, estado
+    condicion_pago, categoria, observaciones, subtotal, iva, percepciones,
+    impuestos, total, saldo_pendiente, estado
 )
 SELECT
     m.compra_id,
@@ -154,8 +157,9 @@ SELECT
     l.fecha_emision,
     l.fecha_vencimiento,
     CASE WHEN l.tipo_pago = 'CUENTA_CORRIENTE' THEN 'CUENTA_CORRIENTE' ELSE 'CONTADO' END,
-    '[migrado de costos_cuentacorrienteproveedor#' || l.id || '] categoria=' || COALESCE(l.categoria, '')
-        || ' caja=' || COALESCE(l.caja, '') || ' tipo_pago_original=' || COALESCE(l.tipo_pago, '')
+    COALESCE(NULLIF(l.categoria, ''), 'MATERIA_PRIMA'),
+    '[migrado de costos_cuentacorrienteproveedor#' || l.id || '] caja=' || COALESCE(l.caja, '')
+        || ' tipo_pago_original=' || COALESCE(l.tipo_pago, '')
         || CASE WHEN l.observaciones IS NOT NULL AND l.observaciones <> '' THEN ' | ' || l.observaciones ELSE '' END,
     l.importe_total - COALESCE(l.iva, 0) - COALESCE(l.percepcion, 0),
     0,
@@ -260,13 +264,12 @@ WHERE l.tipo_norm = 'FACTURA'
 -- backing it), synthesize one Pago per such factura, dated the same as the
 -- factura, for the full importe_total.
 
-INSERT INTO compras_pago (id, proveedor_id, fecha, importe, categoria, estado, observaciones)
+INSERT INTO compras_pago (id, proveedor_id, fecha, importe, estado, observaciones)
 SELECT
     m.pago_id,
     l.proveedor_id,
     l.fecha_emision,
     l.importe_total,
-    COALESCE(NULLIF(l.categoria, ''), 'MATERIA_PRIMA'),
     'REGISTRADO',
     '[migrado de costos_cuentacorrienteproveedor#' || l.id || '] pago generado automáticamente: factura al contado (tipo_pago=' || l.tipo_pago || ')'
 FROM _legacy l
@@ -303,13 +306,12 @@ WHERE l.tipo_norm = 'FACTURA' AND l.tipo_pago IN ('TRANSFERENCIA', 'EFECTIVO');
 -- Pagos -> Pago
 -- ==========================================================================
 
-INSERT INTO compras_pago (id, proveedor_id, fecha, importe, categoria, estado, observaciones)
+INSERT INTO compras_pago (id, proveedor_id, fecha, importe, estado, observaciones)
 SELECT
     m.pago_id,
     l.proveedor_id,
     l.fecha_emision,
     l.importe_total,
-    COALESCE(NULLIF(l.categoria, ''), 'MATERIA_PRIMA'),
     'REGISTRADO',
     '[migrado de costos_cuentacorrienteproveedor#' || l.id || '] tipo_pago_original=' || COALESCE(l.tipo_pago, '')
         || CASE WHEN l.observaciones IS NOT NULL AND l.observaciones <> '' THEN ' | ' || l.observaciones ELSE '' END

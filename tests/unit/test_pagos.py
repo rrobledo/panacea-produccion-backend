@@ -43,38 +43,6 @@ async def test_create_pago_with_single_medio(client):
     assert next(p for p in listed if p["id"] == body["id"])["proveedor_nombre"] == "Galicia SA"
 
 
-async def test_create_pago_categoria_defaults_and_can_be_overridden(client):
-    proveedor = await _create_proveedor(client)
-
-    default_response = await client.post(
-        "/costos/pagos",
-        json={
-            "proveedor_id": proveedor["id"],
-            "fecha": date.today().isoformat(),
-            "importe": 500,
-            "medios": [{"tipo": "EFECTIVO", "importe": 500}],
-        },
-    )
-    assert default_response.status_code == 201
-    assert default_response.json()["categoria"] == "MATERIA_PRIMA"
-
-    explicit_response = await client.post(
-        "/costos/pagos",
-        json={
-            "proveedor_id": proveedor["id"],
-            "fecha": date.today().isoformat(),
-            "importe": 500,
-            "categoria": "SERVICIOS",
-            "medios": [{"tipo": "EFECTIVO", "importe": 500}],
-        },
-    )
-    assert explicit_response.status_code == 201
-    assert explicit_response.json()["categoria"] == "SERVICIOS"
-
-    listed = (await client.get("/costos/pagos", params={"proveedor_id": proveedor["id"]})).json()
-    assert {p["categoria"] for p in listed} == {"MATERIA_PRIMA", "SERVICIOS"}
-
-
 async def test_reject_mismatched_medios_total(client):
     proveedor = await _create_proveedor(client)
     response = await client.post(

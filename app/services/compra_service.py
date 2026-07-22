@@ -117,6 +117,7 @@ async def create_compra(session: AsyncSession, payload: CompraCreate) -> Compra:
         fecha=payload.fecha,
         fecha_vencimiento=payload.fecha_vencimiento,
         condicion_pago=condicion_pago,
+        categoria=payload.categoria,
         observaciones=payload.observaciones,
     )
     session.add(compra)

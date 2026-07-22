@@ -334,6 +334,53 @@ durante esta sesión porque tenía el mismo drift de `articulos_final`
 (VIEW en vez de tabla) documentado más abajo — no relacionado a este
 cambio, ya había vuelto a aparecer.
 
+## `categoria` se mueve de Pago a Compra (2026-07-21)
+
+Pedido explícito del usuario, revierte parte de la sección anterior
+(**[[`categoria` en Pago]]**, arriba): `categoria` no pertenece a `Pago`
+sino a `Compra` — conceptualmente describe el comprobante (materia prima,
+servicios, etc.), no el pago que lo salda, y un `Pago` puede aplicarse a
+varias `Compra` con `categoria` distinta cada una.
+
+- `app/models/pago.py`: `Pago.categoria` **eliminado**.
+- `app/models/compra.py`: `Compra.categoria: Mapped[str] = mapped_column(
+  String(250), default="MATERIA_PRIMA")` (mismo tipo/default que tenía en
+  `Pago`).
+- `app/schemas/pago.py`: `categoria` eliminado de `PagoBase`/`PagoRead`.
+- `app/schemas/compra.py`: `categoria: str = "MATERIA_PRIMA"` agregado a
+  `CompraBase` (cubre `CompraCreate`/`CompraUpdate`) y a `CompraRead`.
+- `app/services/pago_service.py::create_pago`: ya no pasa `categoria`.
+  `app/services/compra_service.py::create_compra`: ahora sí
+  (`categoria=payload.categoria`); `update_compra` ya lo cubre solo por
+  `model_dump(exclude_unset=True)`.
+- Migración nueva (no se tocó `0006`, ya pusheada):
+  `migrations/0007_compra_categoria.sql` + `docker/init-db/11_compra_categoria.sql`
+  — `ALTER TABLE compras_compra ADD COLUMN IF NOT EXISTS categoria ...` +
+  `ALTER TABLE compras_pago DROP COLUMN IF EXISTS categoria`.
+- `scripts/migrate_ctacteprov_to_compras.sql`: `categoria` se movió del
+  INSERT a `compras_pago` (ambas secciones, "Pagos -> Pago" y pagos
+  sintéticos de "Facturas al contado") al INSERT de `compras_compra`
+  (sección "Facturas -> Compra"), mismo `COALESCE(NULLIF(l.categoria, ''),
+  'MATERIA_PRIMA')`. La sección "Pagos -> Pago" (legacy `tipo_movimiento=
+  PAGO`) ya no lleva `categoria` a ningún lado — ese legacy row puede
+  aplicarse (vía Afect) a varias facturas distintas, así que no hay una
+  única `Compra` a la que atribuírsela; se descarta para esos rows (el
+  texto `categoria=...` que antes iba en `observaciones` de `Compra`
+  también se quitó, ya redundante con la columna real).
+- **`scripts/migrate_ctacteprov_to_compras.py` (el port Python) sigue sin
+  tocarse** — nunca tuvo `categoria` en ningún lado (ni en `Pago` ni en
+  `Compra`), mismo patrón de divergencia intencional documentado arriba.
+- Tests: `tests/unit/test_pagos.py::test_create_pago_categoria_defaults_and_can_be_overridden`
+  **eliminado**; `tests/unit/test_compras.py::test_compra_categoria_defaults_and_can_be_overridden`
+  nuevo (mismo shape, sobre `/costos/compras`). `pytest tests/unit -q` →
+  153 passed (mismo número: un test se borró, otro se agregó).
+- Verificado a mano el `.sql` con un seed de 4 rows (factura
+  `CUENTA_CORRIENTE` con categoria propia, factura `TRANSFERENCIA` con
+  categoria propia cuyo pago sintético ya no lleva categoria, factura
+  `EFECTIVO` con categoria vacía → `Compra.categoria='MATERIA_PRIMA'`,
+  pago legacy real sin categoria en el `Pago` resultante) dentro de
+  `BEGIN;`/`ROLLBACK;`, nada quedó commiteado.
+
 ## Cosas a tener presentes
 
 - DB de test local: contenedor Docker en `localhost:55432`

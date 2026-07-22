@@ -49,7 +49,6 @@ class PagoBase(BaseModel):
     proveedor_id: int
     fecha: date
     importe: float
-    categoria: str = "MATERIA_PRIMA"
     observaciones: str | None = None
 
 
@@ -87,7 +86,6 @@ class PagoRead(BaseModel):
     proveedor_nombre: str
     fecha: date
     importe: float
-    categoria: str
     estado: str
     observaciones: str | None
     created_at: datetime

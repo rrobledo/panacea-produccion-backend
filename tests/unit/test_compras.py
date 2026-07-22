@@ -44,6 +44,42 @@ async def test_create_compra_with_detalle_and_impuestos_computes_totals(client):
     assert next(c for c in listed if c["id"] == body["id"])["proveedor_nombre"] == "Acindar"
 
 
+async def test_compra_categoria_defaults_and_can_be_overridden(client):
+    proveedor = await _create_proveedor(client)
+
+    default_response = await client.post(
+        "/costos/compras",
+        json={
+            "proveedor_id": proveedor["id"],
+            "tipo_comprobante": "FACTURA_A",
+            "numero": "1",
+            "fecha": date.today().isoformat(),
+            "condicion_pago": "CUENTA_CORRIENTE",
+            "detalle": [{"descripcion": "Harina", "cantidad": 1, "precio_unitario": 1000}],
+        },
+    )
+    assert default_response.status_code == 201
+    assert default_response.json()["categoria"] == "MATERIA_PRIMA"
+
+    explicit_response = await client.post(
+        "/costos/compras",
+        json={
+            "proveedor_id": proveedor["id"],
+            "tipo_comprobante": "FACTURA_A",
+            "numero": "2",
+            "fecha": date.today().isoformat(),
+            "condicion_pago": "CUENTA_CORRIENTE",
+            "categoria": "SERVICIOS",
+            "detalle": [{"descripcion": "Mantenimiento", "cantidad": 1, "precio_unitario": 1000}],
+        },
+    )
+    assert explicit_response.status_code == 201
+    assert explicit_response.json()["categoria"] == "SERVICIOS"
+
+    listed = (await client.get("/costos/compras", params={"proveedor_id": proveedor["id"]})).json()
+    assert {c["categoria"] for c in listed} == {"MATERIA_PRIMA", "SERVICIOS"}
+
+
 async def test_contado_compra_is_settled_immediately(client):
     proveedor = await _create_proveedor(client)
     response = await client.post(

@@ -16,7 +16,6 @@ class Pago(Base):
     proveedor: Mapped[Proveedor] = relationship(lazy="joined")
     fecha: Mapped[date] = mapped_column(Date)
     importe: Mapped[float] = mapped_column(Float)
-    categoria: Mapped[str] = mapped_column(String(250), default="MATERIA_PRIMA")
     estado: Mapped[str] = mapped_column(String(20), default="REGISTRADO")
     observaciones: Mapped[str | None] = mapped_column(String(500), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
