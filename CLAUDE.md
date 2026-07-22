@@ -183,6 +183,157 @@ Tests: `tests/unit/test_migrate_ctacteprov_to_compras.py` +3
 diagnóstico, referencia no resuelta del lado factura sin mismatch
 asociado). `pytest tests/unit -q` → 125 passed.
 
+## Port a SQL puro del script de backfill (2026-07-20)
+
+Pedido explícito del usuario: `scripts/migrate_ctacteprov_to_compras.sql`
+(nuevo, sin commitear) es un port completo a SQL puro de
+`scripts/migrate_ctacteprov_to_compras.py`, para entornos donde correr
+Python contra la DB destino no es una opción. **No reemplaza el script
+Python** — ambos quedan en `scripts/`, mismo comportamiento.
+
+Diseño (ver comentarios largos al inicio del propio archivo `.sql` para el
+detalle completo):
+- ids nuevos se reservan de antemano via `nextval(pg_get_serial_sequence(...))`
+  en dos tablas temp (`_compra_id_map`/`_pago_id_map`, legacy_id → nuevo id),
+  porque `INSERT ... SELECT ... RETURNING` no puede exponer columnas del
+  `FROM` de origen — necesario para que los INSERTs posteriores (detalle,
+  impuesto, movimiento_cc, adjuntos, aplicaciones) puedan hacer JOIN de
+  vuelta al id legacy.
+- Decode de `image`/`image2` (base64) vía una función `plpgsql` temp-scoped
+  (`pg_temp.b64decode_or_null`) que atrapa el error de `decode(...,
+  'base64')` y devuelve NULL en vez de abortar la migración — mismo
+  comportamiento que el `try/except` de `_decode_legacy_images` en Python.
+- `--skip-ids` → tabla temp `_skip_ids` que el operador puebla a mano antes
+  de correr el script (editando el `INSERT INTO _skip_ids VALUES (...)`
+  que queda vacío por default).
+- `--skip-images` → no hay flag, se indica comentar a mano las dos
+  secciones "images" del archivo.
+- El resumen impreso por Python se reemplaza por un bloque de `SELECT`s de
+  verificación al final (resumen de conteos, filas con tipo_movimiento
+  desconocido, aplicaciones omitidas por exclusión, aplicaciones omitidas
+  por referencia inválida con diagnóstico, saldo_mismatches con el mismo
+  heurístico de "error de punto decimal ~10ⁿx") — resultsets consultables
+  desde `psql` en vez de líneas de texto, deliberadamente no es una
+  traducción línea-por-línea del `print()`.
+- Guard de seguridad nuevo (no existe en el script Python): un `DO` block al
+  inicio aborta con `RAISE EXCEPTION` si `compras_compra` ya tiene filas,
+  porque a diferencia de `migrations/000*.sql` **este script no es
+  idempotente** (ids explícitos reservados de la secuencia) — correrlo dos
+  veces duplicaría todo.
+- Misma convención BEGIN/ROLLBACK que `migrations/0003`/`0005` para
+  dry-run: `psql ... -c "BEGIN;" -f scripts/migrate_ctacteprov_to_compras.sql
+  -c "ROLLBACK;"` vs `psql ... -1 -f scripts/migrate_ctacteprov_to_compras.sql`
+  para aplicar.
+
+**Verificado por paridad, no solo por lectura**: se armó un seed de datos
+contra la DB de test local cubriendo cada rama de comportamiento (factura
+CUENTA_CORRIENTE con detalle/iva/percepción/imagen válida+inválida, factura
+CONTADO sin detalle, `tipo_movimiento` con espacios/mayúsculas variables,
+`tipo_movimiento` desconocido referenciado por un Afect, pago con medio
+conocido/desconocido, aplicación parcial, fila con `importe_pendiente`
+editado a mano con y sin desfasaje decimal, ids excluidos vía skip-ids en
+ambos lados del Afect). Se corrió el script Python y el `.sql` cada uno
+exactamente una vez contra una DB recién recreada desde cero con el mismo
+seed, y se comparó el contenido de las 9 tablas relevantes
+(`compras_compra`, `_detalle`, `_impuesto`, `compras_pago`, `_medio`,
+`_aplicacion`, `compras_movimiento_cc`, `compras_compra_adjunto`,
+`compras_pago_adjunto`) fila por fila: **idénticas, incluyendo los ids
+autogenerados** (ambos motores reservan ids en el mismo orden). El resumen
+de verificación (conteos, diagnósticos de referencia inválida, saldo
+mismatches) también coincidió exactamente entre ambos. También se probó el
+guard de seguridad (aborta en la segunda corrida) y el flujo dry-run
+(`BEGIN;`/`ROLLBACK;` no deja nada escrito).
+
+## `migrate_ctacteprov_to_compras.sql`: TRUNCATE previo + pago sintético para facturas al contado (2026-07-21)
+
+Dos pedidos explícitos del usuario, solo sobre el `.sql` (el port Python
+**no** se tocó, queda desincronizado en estos dos puntos):
+
+- El guard de seguridad `DO $$ ... RAISE EXCEPTION` que abortaba si
+  `compras_compra` ya tenía filas (mencionado como probado en la sección
+  anterior) **se reemplazó** por un `TRUNCATE TABLE ... RESTART IDENTITY
+  CASCADE` explícito sobre las 9 tablas destino, al inicio del script. El
+  script ahora es re-corrible: cada corrida arranca de cero en vez de
+  abortar o duplicar. Es destructivo para cualquier fila que ya esté en
+  esas tablas (ej. algo cargado a mano desde la app) — asumido aceptable
+  porque el uso real es "recrear compras_* desde las tablas legacy".
+- Nueva rama de negocio: factura legacy (`tipo_movimiento=FACTURA`) con
+  `tipo_pago IN ('TRANSFERENCIA', 'EFECTIVO')` ahora genera, además de la
+  `Compra`, un `Pago`/`PagoMedio`/`MovimientoCC` sintético (mismo
+  `tipo_pago` como medio, misma fecha que la factura, por el
+  `importe_total` completo) + una `PagoAplicacion` que lo aplica contra
+  esa `Compra`. Antes, estas facturas se guardaban directo con
+  `saldo_pendiente=0`/`estado=PAGADO` sin ningún `Pago` detrás — el ledger
+  (`compras_movimiento_cc`) solo tenía el lado `FACTURA` (debe), nunca el
+  `PAGO` (haber), a pesar de que la columna `saldo_pendiente` decía 0.
+  Ahora `saldo_pendiente` para estas filas arranca en `importe_total` (no
+  en 0) y baja a 0 vía el trigger `trg_update_compra_saldo_pendiente`
+  cuando se inserta la `PagoAplicacion` sintética — mismo mecanismo que
+  cualquier pago real, nada hardcodeado a mano.
+  - Otros `tipo_pago` no-`CUENTA_CORRIENTE` (`CHEQUE`, `TARJETA`, vacío,
+    etc.) **no** están alcanzados por este cambio — siguen yendo directo a
+    `saldo_pendiente=0`/`PAGADO` sin `Pago`, igual que antes. El usuario
+    pidió esto específicamente para `TRANSFERENCIA`/`EFECTIVO`.
+  - Nuevo `_factura_pago_id_map` (legacy factura id → pago id sintético
+    reservado), paralelo a `_compra_id_map`/`_pago_id_map`.
+  - Resumen de verificación al final ganó una columna
+    `facturas_contado_con_pago_generado`.
+
+Verificado corriendo un seed a mano contra la DB de test local (dentro de
+`BEGIN;`/`ROLLBACK;`, nada quedó commiteado): factura `CUENTA_CORRIENTE`
+sin tocar (`saldo_pendiente`=total, `PENDIENTE`), factura `TRANSFERENCIA` y
+factura `EFECTIVO` cada una con su `Pago` sintético + `PagoAplicacion` +
+línea `PAGO` en `compras_movimiento_cc`, `saldo_pendiente=0`/`PAGADO` vía
+trigger; factura `CHEQUE` sin cambios (directo a 0/`PAGADO`, sin `Pago`); y
+una fila pre-existente en `compras_compra` (simulando una corrida previa)
+efectivamente desapareció después del `TRUNCATE`.
+
+Pendiente si se retoma: decidir si este mismo comportamiento (TRUNCATE +
+pago sintético) se porta también a `migrate_ctacteprov_to_compras.py`, o si
+se documenta la divergencia entre ambos scripts en sus propios headers.
+
+## `categoria` en Pago (2026-07-21)
+
+Pedido explícito del usuario: `Pago` gana un atributo `categoria` (string
+libre, default `MATERIA_PRIMA`), el mismo campo que ya existía en el legacy
+`costos_cuentacorrienteproveedor.categoria` — no hay vocab/enum, igual que
+el legacy (`app/schemas/vocab.py` no lo lista).
+
+- `app/models/pago.py`: `Pago.categoria: Mapped[str] = mapped_column(String(250),
+  default="MATERIA_PRIMA")`.
+- `app/schemas/pago.py`: `categoria: str = "MATERIA_PRIMA"` en `PagoBase`
+  (cubre `PagoCreate`/`PagoUpdate`) y repetido en `PagoRead` (que no hereda
+  de `PagoBase`).
+- `app/services/pago_service.py::create_pago` pasa `categoria=payload.categoria`
+  al construir el `Pago`; `update_pago` ya lo cubre solo por iterar
+  `model_dump(exclude_unset=True)`.
+- Migración: `migrations/0006_pago_categoria.sql` +
+  `docker/init-db/10_pago_categoria.sql` (mismo par que los anteriores) —
+  `ALTER TABLE compras_pago ADD COLUMN IF NOT EXISTS categoria VARCHAR(250)
+  NOT NULL DEFAULT 'MATERIA_PRIMA'`.
+- `scripts/migrate_ctacteprov_to_compras.sql` actualizado: los dos INSERT a
+  `compras_pago` (sección "Pagos -> Pago" y la de pagos sintéticos para
+  "Facturas al contado") ahora incluyen `categoria`, tomada de la
+  `categoria` del propio row legacy (`l.categoria`, con
+  `COALESCE(NULLIF(l.categoria, ''), 'MATERIA_PRIMA')` si viene vacía) —
+  para el pago sintético de una factura al contado, es la `categoria` de
+  esa misma factura legacy (no hay un row `PAGO` legacy separado detrás).
+  Verificado a mano con un seed de 4 rows (`BEGIN;`/`ROLLBACK;`, nada
+  quedó commiteado): pago real con categoria propia, pago real con
+  categoria vacía (cae a `MATERIA_PRIMA`), factura `TRANSFERENCIA` cuyo
+  pago sintético hereda la categoria de la factura.
+- **`scripts/migrate_ctacteprov_to_compras.py` (el port Python) NO se
+  tocó** — el usuario pidió específicamente actualizar el `.sql`. Sigue el
+  mismo patrón de divergencia intencional ya documentado en la sección de
+  TRUNCATE/pago sintético de más abajo.
+- Test nuevo: `tests/unit/test_pagos.py::test_create_pago_categoria_defaults_and_can_be_overridden`.
+  `pytest tests/unit -q` → 153 passed.
+
+Nota: la DB de test local se recreó (`docker compose down -v && up -d`)
+durante esta sesión porque tenía el mismo drift de `articulos_final`
+(VIEW en vez de tabla) documentado más abajo — no relacionado a este
+cambio, ya había vuelto a aparecer.
+
 ## Cosas a tener presentes
 
 - DB de test local: contenedor Docker en `localhost:55432`

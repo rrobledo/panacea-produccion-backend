@@ -23,6 +23,7 @@ async def create_pago(session: AsyncSession, payload: PagoCreate) -> Pago:
         proveedor_id=payload.proveedor_id,
         fecha=payload.fecha,
         importe=payload.importe,
+        categoria=payload.categoria,
         observaciones=payload.observaciones,
     )
     session.add(pago)
