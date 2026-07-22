@@ -117,6 +117,7 @@ async def create_compra(session: AsyncSession, payload: CompraCreate) -> Compra:
         fecha=payload.fecha,
         fecha_vencimiento=payload.fecha_vencimiento,
         condicion_pago=condicion_pago,
+        categoria=payload.categoria,
         observaciones=payload.observaciones,
     )
     session.add(compra)
@@ -197,7 +198,7 @@ async def list_compras(
     proveedor_id: int | None = None,
     con_saldo: bool | None = None,
 ) -> list[Compra]:
-    stmt = select(Compra).order_by(Compra.fecha)
+    stmt = select(Compra).order_by(Compra.created_at.desc(), Compra.id.desc())
     if fecha_desde is not None:
         stmt = stmt.where(Compra.fecha >= fecha_desde)
     if fecha_hasta is not None:
@@ -207,7 +208,7 @@ async def list_compras(
     if proveedor_id is not None:
         stmt = stmt.where(Compra.proveedor_id == proveedor_id)
     if con_saldo is not None:
-        stmt = stmt.where(Compra.saldo_pendiente > 0 if con_saldo else Compra.saldo_pendiente <= 0)
+        stmt = stmt.where(Compra.saldo_pendiente > 1 if con_saldo else Compra.saldo_pendiente <= 0)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 

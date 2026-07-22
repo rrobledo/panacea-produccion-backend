@@ -44,6 +44,42 @@ async def test_create_compra_with_detalle_and_impuestos_computes_totals(client):
     assert next(c for c in listed if c["id"] == body["id"])["proveedor_nombre"] == "Acindar"
 
 
+async def test_compra_categoria_defaults_and_can_be_overridden(client):
+    proveedor = await _create_proveedor(client)
+
+    default_response = await client.post(
+        "/costos/compras",
+        json={
+            "proveedor_id": proveedor["id"],
+            "tipo_comprobante": "FACTURA_A",
+            "numero": "1",
+            "fecha": date.today().isoformat(),
+            "condicion_pago": "CUENTA_CORRIENTE",
+            "detalle": [{"descripcion": "Harina", "cantidad": 1, "precio_unitario": 1000}],
+        },
+    )
+    assert default_response.status_code == 201
+    assert default_response.json()["categoria"] == "MATERIA_PRIMA"
+
+    explicit_response = await client.post(
+        "/costos/compras",
+        json={
+            "proveedor_id": proveedor["id"],
+            "tipo_comprobante": "FACTURA_A",
+            "numero": "2",
+            "fecha": date.today().isoformat(),
+            "condicion_pago": "CUENTA_CORRIENTE",
+            "categoria": "SERVICIOS",
+            "detalle": [{"descripcion": "Mantenimiento", "cantidad": 1, "precio_unitario": 1000}],
+        },
+    )
+    assert explicit_response.status_code == 201
+    assert explicit_response.json()["categoria"] == "SERVICIOS"
+
+    listed = (await client.get("/costos/compras", params={"proveedor_id": proveedor["id"]})).json()
+    assert {c["categoria"] for c in listed} == {"MATERIA_PRIMA", "SERVICIOS"}
+
+
 async def test_contado_compra_is_settled_immediately(client):
     proveedor = await _create_proveedor(client)
     response = await client.post(
@@ -118,6 +154,35 @@ async def test_list_compras_filters_by_con_saldo(client):
     sin_saldo = (await client.get("/costos/compras", params={"con_saldo": False})).json()
     assert {c["id"] for c in sin_saldo} >= {saldada_id}
     assert pendiente_id not in {c["id"] for c in sin_saldo}
+
+
+async def test_list_compras_orders_by_created_at_descending(client):
+    proveedor = await _create_proveedor(client)
+
+    async def _create(fecha, numero):
+        response = await client.post(
+            "/costos/compras",
+            json={
+                "proveedor_id": proveedor["id"],
+                "tipo_comprobante": "FACTURA_A",
+                "numero": numero,
+                "fecha": fecha.isoformat(),
+                "condicion_pago": "CUENTA_CORRIENTE",
+                "detalle": [{"descripcion": "Item", "cantidad": 1, "precio_unitario": 1000}],
+            },
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    # created first but with a *later* business fecha, and vice versa —
+    # proves ordering follows created_at (insertion order), not fecha.
+    created_first = await _create(date(2026, 6, 1), "F1")
+    created_second = await _create(date(2026, 1, 1), "F2")
+
+    assert created_first["created_at"] is not None
+
+    listed = (await client.get("/costos/compras", params={"proveedor_id": proveedor["id"]})).json()
+    assert [c["id"] for c in listed] == [created_second["id"], created_first["id"]]
 
 
 async def test_reject_unknown_compra_impuesto_tipo(client):

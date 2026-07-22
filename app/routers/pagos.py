@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_session, require_api_key
+from app.deps import get_session
 from app.schemas.pago import (
     PagoAdjuntoRead,
     PagoAplicacionCreate,
@@ -26,7 +26,6 @@ async def list_pagos(proveedor_id: int | None = None, session: AsyncSession = De
     "",
     response_model=PagoDetailRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_api_key)],
 )
 async def create_pago(payload: PagoCreate, session: AsyncSession = Depends(get_session)):
     return await service.create_pago(session, payload)
@@ -37,12 +36,12 @@ async def get_pago(pago_id: int, session: AsyncSession = Depends(get_session)):
     return await service.get_pago(session, pago_id, with_detail=True)
 
 
-@router.put("/{pago_id}", response_model=PagoDetailRead, dependencies=[Depends(require_api_key)])
+@router.put("/{pago_id}", response_model=PagoDetailRead)
 async def update_pago(pago_id: int, payload: PagoUpdate, session: AsyncSession = Depends(get_session)):
     return await service.update_pago(session, pago_id, payload)
 
 
-@router.delete("/{pago_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_api_key)])
+@router.delete("/{pago_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_pago(pago_id: int, session: AsyncSession = Depends(get_session)):
     await service.delete_pago(session, pago_id)
 
@@ -51,7 +50,6 @@ async def delete_pago(pago_id: int, session: AsyncSession = Depends(get_session)
     "/{pago_id}/aplicaciones",
     response_model=list[PagoAplicacionRead],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_api_key)],
 )
 async def apply_pago(
     pago_id: int,
@@ -71,7 +69,6 @@ async def list_aplicaciones(pago_id: int, session: AsyncSession = Depends(get_se
     "/{pago_id}/adjuntos",
     response_model=PagoAdjuntoRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_api_key)],
 )
 async def upload_adjunto(
     pago_id: int,

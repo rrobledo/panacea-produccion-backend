@@ -154,7 +154,7 @@ async def test_list_aplicaciones_for_missing_pago_returns_404(client):
     assert response.status_code == 404
 
 
-async def test_list_pagos_orders_most_recent_first(client):
+async def test_list_pagos_orders_by_created_at_descending(client):
     proveedor = await _create_proveedor(client)
 
     async def _create_pago(fecha: date) -> dict:
@@ -170,8 +170,12 @@ async def test_list_pagos_orders_most_recent_first(client):
         assert response.status_code == 201
         return response.json()
 
-    older = await _create_pago(date(2026, 1, 1))
-    newer = await _create_pago(date(2026, 6, 1))
+    # created first but with a *later* business fecha, and vice versa —
+    # proves ordering follows created_at (insertion order), not fecha.
+    created_first = await _create_pago(date(2026, 6, 1))
+    created_second = await _create_pago(date(2026, 1, 1))
+
+    assert created_first["created_at"] is not None
 
     listed = (await client.get("/costos/pagos", params={"proveedor_id": proveedor["id"]})).json()
-    assert [p["id"] for p in listed] == [newer["id"], older["id"]]
+    assert [p["id"] for p in listed] == [created_second["id"], created_first["id"]]

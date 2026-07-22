@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_session, require_api_key
+from app.deps import get_session
 from app.models.insumos import Insumos
 from app.schemas.insumos import InsumoCreate, InsumoRead
 
@@ -18,7 +18,7 @@ async def list_insumos(nombre: str | None = None, session: AsyncSession = Depend
     return result.scalars().all()
 
 
-@router.post("", response_model=InsumoRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_api_key)])
+@router.post("", response_model=InsumoRead, status_code=status.HTTP_201_CREATED)
 async def create_insumo(payload: InsumoCreate, session: AsyncSession = Depends(get_session)):
     insumo = Insumos(**payload.model_dump())
     session.add(insumo)
@@ -35,7 +35,7 @@ async def get_insumo(insumo_id: int, session: AsyncSession = Depends(get_session
     return insumo
 
 
-@router.put("/{insumo_id}", response_model=InsumoRead, dependencies=[Depends(require_api_key)])
+@router.put("/{insumo_id}", response_model=InsumoRead)
 async def update_insumo(insumo_id: int, payload: InsumoCreate, session: AsyncSession = Depends(get_session)):
     insumo = await session.get(Insumos, insumo_id)
     if insumo is None:
@@ -47,7 +47,7 @@ async def update_insumo(insumo_id: int, payload: InsumoCreate, session: AsyncSes
     return insumo
 
 
-@router.delete("/{insumo_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_api_key)])
+@router.delete("/{insumo_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_insumo(insumo_id: int, session: AsyncSession = Depends(get_session)):
     insumo = await session.get(Insumos, insumo_id)
     if insumo is None:

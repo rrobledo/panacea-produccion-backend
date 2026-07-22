@@ -122,6 +122,7 @@ class CompraBase(BaseModel):
     fecha_vencimiento: date | None = None
     # None => defaulted from the proveedor's condicion_pago by the service.
     condicion_pago: CondicionPago | None = None
+    categoria: str = "MATERIA_PRIMA"
     observaciones: str | None = None
     orden_compra_id: int | None = None
 
@@ -148,6 +149,7 @@ class CompraRead(BaseModel):
     fecha: date
     fecha_vencimiento: date | None
     condicion_pago: str
+    categoria: str
     observaciones: str | None
     subtotal: float
     iva: float
@@ -156,6 +158,7 @@ class CompraRead(BaseModel):
     total: float
     saldo_pendiente: float
     estado: CompraEstado
+    created_at: datetime
 
 
 class CompraDetailRead(CompraRead):

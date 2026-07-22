@@ -75,7 +75,7 @@ async def get_pago(session: AsyncSession, pago_id: int, with_detail: bool = Fals
 
 
 async def list_pagos(session: AsyncSession, proveedor_id: int | None = None) -> list[Pago]:
-    stmt = select(Pago).order_by(Pago.fecha.desc(), Pago.id.desc())
+    stmt = select(Pago).order_by(Pago.created_at.desc(), Pago.id.desc())
     if proveedor_id is not None:
         stmt = stmt.where(Pago.proveedor_id == proveedor_id)
     result = await session.execute(stmt)
