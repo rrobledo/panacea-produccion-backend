@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,10 +76,19 @@ async def get_pago(session: AsyncSession, pago_id: int, with_detail: bool = Fals
     return row
 
 
-async def list_pagos(session: AsyncSession, proveedor_id: int | None = None) -> list[Pago]:
+async def list_pagos(
+    session: AsyncSession,
+    proveedor_id: int | None = None,
+    fecha_desde: date | None = None,
+    fecha_hasta: date | None = None,
+) -> list[Pago]:
     stmt = select(Pago).order_by(Pago.created_at.desc(), Pago.id.desc())
     if proveedor_id is not None:
         stmt = stmt.where(Pago.proveedor_id == proveedor_id)
+    if fecha_desde is not None:
+        stmt = stmt.where(Pago.fecha >= fecha_desde)
+    if fecha_hasta is not None:
+        stmt = stmt.where(Pago.fecha <= fecha_hasta)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 

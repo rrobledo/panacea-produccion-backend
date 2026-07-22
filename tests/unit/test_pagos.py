@@ -179,3 +179,31 @@ async def test_list_pagos_orders_by_created_at_descending(client):
 
     listed = (await client.get("/costos/pagos", params={"proveedor_id": proveedor["id"]})).json()
     assert [p["id"] for p in listed] == [created_second["id"], created_first["id"]]
+
+
+async def test_list_pagos_filters_by_fecha_range(client):
+    proveedor = await _create_proveedor(client)
+
+    async def _create_pago(fecha: date) -> dict:
+        response = await client.post(
+            "/costos/pagos",
+            json={
+                "proveedor_id": proveedor["id"],
+                "fecha": fecha.isoformat(),
+                "importe": 100,
+                "medios": [{"tipo": "EFECTIVO", "importe": 100}],
+            },
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    en_enero = await _create_pago(date(2026, 1, 15))
+    await _create_pago(date(2026, 2, 15))
+
+    listed = (
+        await client.get(
+            "/costos/pagos",
+            params={"proveedor_id": proveedor["id"], "fecha_desde": "2026-01-01", "fecha_hasta": "2026-01-31"},
+        )
+    ).json()
+    assert [p["id"] for p in listed] == [en_enero["id"]]

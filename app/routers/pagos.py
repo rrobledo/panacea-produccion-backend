@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, File, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,8 +20,13 @@ router = APIRouter(prefix="/pagos", tags=["pagos"])
 
 
 @router.get("", response_model=list[PagoRead])
-async def list_pagos(proveedor_id: int | None = None, session: AsyncSession = Depends(get_session)):
-    return await service.list_pagos(session, proveedor_id)
+async def list_pagos(
+    proveedor_id: int | None = None,
+    fecha_desde: date | None = None,
+    fecha_hasta: date | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    return await service.list_pagos(session, proveedor_id, fecha_desde, fecha_hasta)
 
 
 @router.post(
