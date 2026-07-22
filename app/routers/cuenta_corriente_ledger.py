@@ -35,3 +35,21 @@ async def get_cuenta_corriente_resumen(
 @resumen_router.get("/saldos")
 async def get_cuenta_corriente_saldos(session: AsyncSession = Depends(get_session)):
     return await service.get_saldos_por_proveedor(session)
+
+
+@resumen_router.get("/gastos-por-proveedor")
+async def get_gastos_por_proveedor(
+    fecha_desde: date,
+    fecha_hasta: date,
+    session: AsyncSession = Depends(get_session),
+):
+    return await service.get_gastos_por_proveedor(session, fecha_desde, fecha_hasta)
+
+
+@resumen_router.get("/pagos-por-proveedor")
+async def get_pagos_por_proveedor(
+    fecha_desde: date,
+    fecha_hasta: date,
+    session: AsyncSession = Depends(get_session),
+):
+    return await service.get_pagos_por_proveedor(session, fecha_desde, fecha_hasta)

@@ -108,6 +108,61 @@ async def get_saldos_por_proveedor(session: AsyncSession) -> dict:
     return {"total_pendiente": total_pendiente, "proveedores": proveedores}
 
 
+async def get_gastos_por_proveedor(session: AsyncSession, fecha_desde: date, fecha_hasta: date) -> dict:
+    """Compra.total per proveedor within [fecha_desde, fecha_hasta], ranked
+    descending — same period scope as get_resumen's total_gastos (every
+    Compra regardless of condicion_pago/estado).
+    """
+    if fecha_desde > fecha_hasta:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="fecha_desde must be <= fecha_hasta")
+
+    stmt = (
+        select(
+            Proveedor.id,
+            Proveedor.nombre,
+            func.sum(Compra.total).label("total"),
+        )
+        .join(Compra, Compra.proveedor_id == Proveedor.id)
+        .where(Compra.fecha >= fecha_desde, Compra.fecha <= fecha_hasta)
+        .group_by(Proveedor.id, Proveedor.nombre)
+        .order_by(func.sum(Compra.total).desc())
+    )
+    rows = (await session.execute(stmt)).all()
+
+    proveedores = [
+        {"proveedor_id": row.id, "proveedor_nombre": row.nombre, "total": float(row.total)} for row in rows
+    ]
+    total_periodo = sum(p["total"] for p in proveedores)
+    return {"total_periodo": total_periodo, "proveedores": proveedores}
+
+
+async def get_pagos_por_proveedor(session: AsyncSession, fecha_desde: date, fecha_hasta: date) -> dict:
+    """Pago.importe per proveedor within [fecha_desde, fecha_hasta], ranked
+    descending — same period scope as get_resumen's total_pagos.
+    """
+    if fecha_desde > fecha_hasta:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="fecha_desde must be <= fecha_hasta")
+
+    stmt = (
+        select(
+            Proveedor.id,
+            Proveedor.nombre,
+            func.sum(Pago.importe).label("total"),
+        )
+        .join(Pago, Pago.proveedor_id == Proveedor.id)
+        .where(Pago.fecha >= fecha_desde, Pago.fecha <= fecha_hasta)
+        .group_by(Proveedor.id, Proveedor.nombre)
+        .order_by(func.sum(Pago.importe).desc())
+    )
+    rows = (await session.execute(stmt)).all()
+
+    proveedores = [
+        {"proveedor_id": row.id, "proveedor_nombre": row.nombre, "total": float(row.total)} for row in rows
+    ]
+    total_periodo = sum(p["total"] for p in proveedores)
+    return {"total_periodo": total_periodo, "proveedores": proveedores}
+
+
 async def get_resumen(session: AsyncSession, fecha_desde: date, fecha_hasta: date) -> dict:
     if fecha_desde > fecha_hasta:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="fecha_desde must be <= fecha_hasta")

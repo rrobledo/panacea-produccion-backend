@@ -192,6 +192,76 @@ async def test_saldos_endpoint_groups_by_proveedor(client):
     assert saldos_por_id[proveedor_b["id"]] == 300
 
 
+async def test_gastos_por_proveedor_ranked_descending_and_scoped_to_period(client):
+    proveedor_a = await _create_proveedor(client)
+    proveedor_b_response = await client.post(
+        "/costos/proveedores", json={"nombre": "Bertotto", "cuit": "20-66666666-6"}
+    )
+    assert proveedor_b_response.status_code == 201
+    proveedor_b = proveedor_b_response.json()
+
+    today = date.today().isoformat()
+    await _create_compra(client, proveedor_a["id"], 500, numero="F1", fecha=today)
+    await _create_compra(client, proveedor_b["id"], 1000, numero="F1", fecha=today)
+    # Out of period — must not contribute to the ranking.
+    await _create_compra(client, proveedor_a["id"], 5000, numero="F2", fecha="2020-01-01")
+
+    response = await client.get(
+        "/costos/cuenta-corriente/gastos-por-proveedor", params={"fecha_desde": today, "fecha_hasta": today}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_periodo"] == 1500
+
+    nombres = [p["proveedor_nombre"] for p in body["proveedores"]]
+    assert nombres == ["Bertotto", proveedor_a["nombre"]]  # descending by total
+    totales = {p["proveedor_nombre"]: p["total"] for p in body["proveedores"]}
+    assert totales == {"Bertotto": 1000, proveedor_a["nombre"]: 500}
+
+
+async def test_pagos_por_proveedor_ranked_descending_and_scoped_to_period(client):
+    proveedor_a = await _create_proveedor(client)
+    proveedor_b_response = await client.post(
+        "/costos/proveedores", json={"nombre": "Bertotto", "cuit": "20-66666666-6"}
+    )
+    assert proveedor_b_response.status_code == 201
+    proveedor_b = proveedor_b_response.json()
+
+    today = date.today().isoformat()
+    for proveedor_id, importe in ((proveedor_a["id"], 300), (proveedor_b["id"], 900)):
+        await client.post(
+            "/costos/pagos",
+            json={
+                "proveedor_id": proveedor_id,
+                "fecha": today,
+                "importe": importe,
+                "medios": [{"tipo": "EFECTIVO", "importe": importe}],
+            },
+        )
+    # Out of period — must not contribute to the ranking.
+    await client.post(
+        "/costos/pagos",
+        json={
+            "proveedor_id": proveedor_a["id"],
+            "fecha": "2020-01-01",
+            "importe": 9000,
+            "medios": [{"tipo": "EFECTIVO", "importe": 9000}],
+        },
+    )
+
+    response = await client.get(
+        "/costos/cuenta-corriente/pagos-por-proveedor", params={"fecha_desde": today, "fecha_hasta": today}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_periodo"] == 1200
+
+    nombres = [p["proveedor_nombre"] for p in body["proveedores"]]
+    assert nombres == ["Bertotto", proveedor_a["nombre"]]  # descending by total
+    totales = {p["proveedor_nombre"]: p["total"] for p in body["proveedores"]}
+    assert totales == {"Bertotto": 900, proveedor_a["nombre"]: 300}
+
+
 async def test_saldos_endpoint_excludes_proveedor_sin_saldo_pendiente(client):
     proveedor = await _create_proveedor(client)
     compra = await _create_compra(client, proveedor["id"], 1000, numero="F1")
