@@ -181,6 +181,41 @@ async def test_list_pagos_orders_by_created_at_descending(client):
     assert [p["id"] for p in listed] == [created_second["id"], created_first["id"]]
 
 
+async def test_delete_pago_reverts_aplicacion_and_saldo_pendiente(client):
+    proveedor = await _create_proveedor(client)
+    compra = await _create_compra(client, proveedor["id"])
+
+    pago = (
+        await client.post(
+            "/costos/pagos",
+            json={
+                "proveedor_id": proveedor["id"],
+                "fecha": date.today().isoformat(),
+                "importe": 400,
+                "medios": [{"tipo": "EFECTIVO", "importe": 400}],
+            },
+        )
+    ).json()
+    await client.post(f"/costos/pagos/{pago['id']}/aplicaciones", json=[{"compra_id": compra["id"], "importe": 400}])
+
+    compra_after_aplicar = (await client.get(f"/costos/compras/{compra['id']}")).json()
+    assert compra_after_aplicar["saldo_pendiente"] == 600
+    assert compra_after_aplicar["estado"] == "PARCIAL"
+
+    delete_response = await client.delete(f"/costos/pagos/{pago['id']}")
+    assert delete_response.status_code == 204
+
+    # The Compra reverts as if the pago never applied — same trigger that
+    # decrements saldo_pendiente on aplicacion insert reverts it on the
+    # cascade-delete of compras_pago_aplicacion (migrations/0008).
+    compra_after_delete = (await client.get(f"/costos/compras/{compra['id']}")).json()
+    assert compra_after_delete["saldo_pendiente"] == 1000
+    assert compra_after_delete["estado"] == "PENDIENTE"
+
+    assert (await client.get(f"/costos/pagos/{pago['id']}")).status_code == 404
+    assert (await client.get(f"/costos/pagos/{pago['id']}/aplicaciones")).status_code == 404
+
+
 async def test_list_pagos_filters_by_fecha_range(client):
     proveedor = await _create_proveedor(client)
 

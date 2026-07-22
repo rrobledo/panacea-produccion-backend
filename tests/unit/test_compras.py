@@ -407,3 +407,27 @@ async def test_historical_migration_tipo_accepted(client):
     )
     assert response.status_code == 201
     assert response.json()["impuestos"] == 500
+
+
+async def test_delete_compra_cascades_movimiento_cc(client):
+    # Every Compra gets a MovimientoCC row on creation
+    # (movimiento_cc_service.append_compra_movimiento); compras_movimiento_cc
+    # lacked ON DELETE CASCADE until migrations/0008, which made this delete
+    # 500 with a foreign key violation for every real Compra.
+    proveedor = await _create_proveedor(client)
+    response = await client.post(
+        "/costos/compras",
+        json={
+            "proveedor_id": proveedor["id"],
+            "tipo_comprobante": "FACTURA_A",
+            "numero": "1",
+            "fecha": date.today().isoformat(),
+            "condicion_pago": "CUENTA_CORRIENTE",
+            "detalle": [{"descripcion": "Item", "cantidad": 1, "precio_unitario": 1000}],
+        },
+    )
+    compra = response.json()
+
+    delete_response = await client.delete(f"/costos/compras/{compra['id']}")
+    assert delete_response.status_code == 204
+    assert (await client.get(f"/costos/compras/{compra['id']}")).status_code == 404
