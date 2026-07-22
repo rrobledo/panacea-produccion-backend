@@ -28,9 +28,10 @@ async def list_compras(
     estado: str | None = None,
     proveedor_id: int | None = None,
     con_saldo: bool | None = None,
+    categoria: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    return await service.list_compras(session, fecha_desde, fecha_hasta, estado, proveedor_id, con_saldo)
+    return await service.list_compras(session, fecha_desde, fecha_hasta, estado, proveedor_id, con_saldo, categoria)
 
 
 @router.post(

@@ -156,6 +156,43 @@ async def test_list_compras_filters_by_con_saldo(client):
     assert pendiente_id not in {c["id"] for c in sin_saldo}
 
 
+async def test_list_compras_filters_by_categoria(client):
+    proveedor = await _create_proveedor(client)
+    materia_prima = await client.post(
+        "/costos/compras",
+        json={
+            "proveedor_id": proveedor["id"],
+            "tipo_comprobante": "FACTURA_A",
+            "numero": "F1",
+            "fecha": date.today().isoformat(),
+            "categoria": "MATERIA_PRIMA",
+            "detalle": [{"descripcion": "Harina", "cantidad": 1, "precio_unitario": 1000}],
+        },
+    )
+    assert materia_prima.status_code == 201
+    materia_prima_id = materia_prima.json()["id"]
+
+    servicios = await client.post(
+        "/costos/compras",
+        json={
+            "proveedor_id": proveedor["id"],
+            "tipo_comprobante": "FACTURA_A",
+            "numero": "F2",
+            "fecha": date.today().isoformat(),
+            "categoria": "SERVICIOS",
+            "detalle": [{"descripcion": "Mantenimiento", "cantidad": 1, "precio_unitario": 500}],
+        },
+    )
+    assert servicios.status_code == 201
+    servicios_id = servicios.json()["id"]
+
+    filtered = (
+        await client.get("/costos/compras", params={"proveedor_id": proveedor["id"], "categoria": "SERVICIOS"})
+    ).json()
+    assert {c["id"] for c in filtered} == {servicios_id}
+    assert materia_prima_id not in {c["id"] for c in filtered}
+
+
 async def test_list_compras_orders_by_created_at_descending(client):
     proveedor = await _create_proveedor(client)
 

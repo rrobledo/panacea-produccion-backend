@@ -197,6 +197,7 @@ async def list_compras(
     estado: str | None = None,
     proveedor_id: int | None = None,
     con_saldo: bool | None = None,
+    categoria: str | None = None,
 ) -> list[Compra]:
     stmt = select(Compra).order_by(Compra.created_at.desc(), Compra.id.desc())
     if fecha_desde is not None:
@@ -209,6 +210,8 @@ async def list_compras(
         stmt = stmt.where(Compra.proveedor_id == proveedor_id)
     if con_saldo is not None:
         stmt = stmt.where(Compra.saldo_pendiente > 1 if con_saldo else Compra.saldo_pendiente <= 0)
+    if categoria is not None:
+        stmt = stmt.where(Compra.categoria == categoria)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
