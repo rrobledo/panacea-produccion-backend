@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.compra import Compra
 from app.models.movimiento_cc import MovimientoCC
-from app.models.pago import Pago
+from app.models.pago import Pago, PagoAplicacion
 from app.models.proveedor import Proveedor
 
 
@@ -127,8 +127,41 @@ async def get_resumen(session: AsyncSession, fecha_desde: date, fecha_hasta: dat
     )
     total_pagos = (await session.execute(pagos_stmt)).scalar_one()
 
+    gastos_por_categoria_stmt = (
+        select(Compra.categoria, func.sum(Compra.total))
+        .where(Compra.fecha >= fecha_desde, Compra.fecha <= fecha_hasta)
+        .group_by(Compra.categoria)
+        .having(func.sum(Compra.total) > 0)
+        .order_by(func.sum(Compra.total).desc())
+    )
+    gastos_por_categoria = [
+        {"categoria": row.categoria, "total": float(row[1])}
+        for row in (await session.execute(gastos_por_categoria_stmt)).all()
+    ]
+
+    # Pago no tiene categoria propia (design.md: un Pago puede aplicarse a
+    # varias Compra con categoria distinta) — se agrupa por la categoria de
+    # cada Compra saldada, vía PagoAplicacion. Por eso la suma de este
+    # array puede ser menor a total_pagos: un pago recién creado y todavía
+    # sin aplicar contribuye a total_pagos pero no aparece acá.
+    pagos_por_categoria_stmt = (
+        select(Compra.categoria, func.sum(PagoAplicacion.importe))
+        .join(Pago, PagoAplicacion.pago_id == Pago.id)
+        .join(Compra, PagoAplicacion.compra_id == Compra.id)
+        .where(Pago.fecha >= fecha_desde, Pago.fecha <= fecha_hasta)
+        .group_by(Compra.categoria)
+        .having(func.sum(PagoAplicacion.importe) > 0)
+        .order_by(func.sum(PagoAplicacion.importe).desc())
+    )
+    pagos_por_categoria = [
+        {"categoria": row.categoria, "total": float(row[1])}
+        for row in (await session.execute(pagos_por_categoria_stmt)).all()
+    ]
+
     return {
         "total_facturas_pendientes": float(total_facturas_pendientes),
         "total_gastos": float(total_gastos),
         "total_pagos": float(total_pagos),
+        "gastos_por_categoria": gastos_por_categoria,
+        "pagos_por_categoria": pagos_por_categoria,
     }

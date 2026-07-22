@@ -108,6 +108,40 @@ async def test_resumen_endpoint(client):
     assert body["total_pagos"] == 350
 
 
+async def test_resumen_gastos_y_pagos_por_categoria(client):
+    proveedor = await _create_proveedor(client)
+    today = date.today().isoformat()
+    compra_mp = await _create_compra(client, proveedor["id"], 1000, numero="F1", fecha=today, categoria="MATERIA_PRIMA")
+    await _create_compra(client, proveedor["id"], 200, numero="F2", fecha=today, categoria="SERVICIOS")
+
+    pago = (
+        await client.post(
+            "/costos/pagos",
+            json={
+                "proveedor_id": proveedor["id"],
+                "fecha": today,
+                "importe": 400,
+                "medios": [{"tipo": "EFECTIVO", "importe": 400}],
+            },
+        )
+    ).json()
+    await client.post(
+        f"/costos/pagos/{pago['id']}/aplicaciones", json=[{"compra_id": compra_mp["id"], "importe": 400}]
+    )
+
+    response = await client.get("/costos/cuenta-corriente/resumen", params={"fecha_desde": today, "fecha_hasta": today})
+    assert response.status_code == 200
+    body = response.json()
+
+    gastos_por_id = {r["categoria"]: r["total"] for r in body["gastos_por_categoria"]}
+    assert gastos_por_id == {"MATERIA_PRIMA": 1000, "SERVICIOS": 200}
+
+    # Solo la Compra efectivamente saldada por el pago aparece — el pago se
+    # atribuye a la categoria de la Compra que aplica, no tiene la suya propia.
+    pagos_por_id = {r["categoria"]: r["total"] for r in body["pagos_por_categoria"]}
+    assert pagos_por_id == {"MATERIA_PRIMA": 400}
+
+
 async def test_resumen_gastos_and_pagos_are_scoped_to_period(client):
     proveedor = await _create_proveedor(client)
     await _create_compra(client, proveedor["id"], 1000, numero="F1", fecha="2026-01-15")
