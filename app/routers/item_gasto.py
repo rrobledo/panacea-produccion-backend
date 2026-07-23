@@ -10,10 +10,18 @@ router = APIRouter(prefix="/items-gasto", tags=["items-gasto"])
 
 
 @router.get("", response_model=list[ItemGastoRead])
-async def list_items_gasto(nombre: str | None = None, session: AsyncSession = Depends(get_session)):
+async def list_items_gasto(
+    nombre: str | None = None,
+    q: str | None = None,
+    limit: int | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    busqueda = nombre or q
     stmt = select(ItemGasto).order_by(ItemGasto.nombre)
-    if nombre:
-        stmt = stmt.where(ItemGasto.nombre.ilike(f"%{nombre}%"))
+    if busqueda:
+        stmt = stmt.where(ItemGasto.nombre.ilike(f"%{busqueda}%"))
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await session.execute(stmt)
     return result.scalars().all()
 

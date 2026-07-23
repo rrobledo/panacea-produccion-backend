@@ -14,14 +14,19 @@ router = APIRouter(prefix="/proveedores", tags=["proveedores"])
 @router.get("", response_model=list[ProveedorRead])
 async def list_proveedores(
     nombre: str | None = None,
+    q: str | None = None,
     estado: str | None = None,
+    limit: int | None = None,
     session: AsyncSession = Depends(get_session),
 ):
+    busqueda = nombre or q
     stmt = select(Proveedor).order_by(Proveedor.nombre)
-    if nombre:
-        stmt = stmt.where(Proveedor.nombre.ilike(f"%{nombre}%"))
+    if busqueda:
+        stmt = stmt.where(Proveedor.nombre.ilike(f"%{busqueda}%"))
     if estado and estado != "ALL":
         stmt = stmt.where(Proveedor.estado == estado)
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await session.execute(stmt)
     return result.scalars().all()
 
