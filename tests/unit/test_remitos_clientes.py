@@ -63,15 +63,6 @@ async def test_clientes_q_alias_matches_either_field(client, session):
     assert nombres == {("Juan", "Garcia"), ("Maria", "Garciarena")}
 
 
-async def test_clientes_limit_caps_results(client, session):
-    await _make_cliente(session, 1, nom1="Juan", nom2="Garcia")
-    await _make_cliente(session, 2, nom1="Maria", nom2="Garciarena")
-
-    response = await client.get("/costos/clientes", params={"limit": 1})
-    assert response.status_code == 200
-    assert len(response.json()) == 1
-
-
 async def test_get_cliente_returns_full_record_shape(client, session):
     await session.execute(
         text(

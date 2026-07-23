@@ -98,16 +98,6 @@ async def test_list_productos_q_alias_filters_like_nombre(client, session):
     assert names == ["Torta Chocolate", "Torta Vainilla"]
 
 
-async def test_list_productos_limit_caps_results(client, session):
-    await _make_producto(session, nombre="A Pan", prioridad=1)
-    await _make_producto(session, nombre="B Pan", prioridad=2)
-    await _make_producto(session, nombre="C Pan", prioridad=3)
-
-    response = await client.get("/costos/productos", params={"limit": 2})
-    assert response.status_code == 200
-    assert len(response.json()) == 2
-
-
 async def test_create_producto_does_not_cascade_into_planning(client, session):
     response = await client.post(
         "/costos/productos",

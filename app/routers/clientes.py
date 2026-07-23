@@ -13,7 +13,6 @@ router = APIRouter(prefix="/clientes", tags=["clientes"])
 async def list_clientes(
     nombre: str | None = None,
     q: str | None = None,
-    limit: int | None = None,
     session: AsyncSession = Depends(get_session),
 ):
     busqueda = nombre or q
@@ -21,8 +20,6 @@ async def list_clientes(
     if busqueda:
         pattern = f"%{busqueda}%"
         stmt = stmt.where(or_(Clientes.nom1.ilike(pattern), Clientes.nom2.ilike(pattern)))
-    if limit is not None:
-        stmt = stmt.limit(limit)
     result = await session.execute(stmt)
     return [ClienteRead.from_orm_row(row) for row in result.scalars().all()]
 

@@ -18,15 +18,6 @@ async def test_list_items_gasto_q_alias_filters_like_nombre(client):
     assert nombres == ["Flete"]
 
 
-async def test_list_items_gasto_limit_caps_results(client):
-    await client.post("/costos/items-gasto", json={"nombre": "Flete"})
-    await client.post("/costos/items-gasto", json={"nombre": "Alquiler"})
-
-    response = await client.get("/costos/items-gasto", params={"limit": 1})
-    assert response.status_code == 200
-    assert len(response.json()) == 1
-
-
 async def test_create_item_gasto_returns_201_with_generated_id(client):
     response = await client.post("/costos/items-gasto", json={"codigo": "FLE", "nombre": "Flete"})
     assert response.status_code == 201

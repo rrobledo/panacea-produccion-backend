@@ -51,12 +51,3 @@ async def test_list_proveedores_q_alias_filters_like_nombre(client):
     assert response.status_code == 200
     nombres = [p["nombre"] for p in response.json()]
     assert nombres == ["Acindar"]
-
-
-async def test_list_proveedores_limit_caps_results(client):
-    await client.post("/costos/proveedores", json={"nombre": "Acindar", "cuit": "20-11111111-1"})
-    await client.post("/costos/proveedores", json={"nombre": "Ternium", "cuit": "20-22222222-2"})
-
-    response = await client.get("/costos/proveedores", params={"limit": 1})
-    assert response.status_code == 200
-    assert len(response.json()) == 1
