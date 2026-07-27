@@ -31,7 +31,7 @@ CompraImpuestoTipo = Literal[
     "HISTORICO_SIN_DESGLOSE",
 ]
 
-PagoMedioTipo = Literal["TRANSFERENCIA", "CHEQUE", "ECHEQ", "EFECTIVO", "TARJETA"]
+PagoMedioTipo = Literal["TRANSFERENCIA", "CHEQUE", "ECHEQ", "EFECTIVO", "TARJETA", "NOTA_CREDITO"]
 CHEQUE_LIKE_MEDIOS: set[str] = {"CHEQUE", "ECHEQ"}
 
 CompraDetalleTipo = Literal["INSUMO", "ITEM_GASTO", "LIBRE"]
