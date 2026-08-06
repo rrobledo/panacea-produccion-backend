@@ -5,7 +5,16 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
-UserRole = Enum("admin", "user", name="user_role", validate_strings=True)
+UserRole = Enum(
+    "admin",
+    "user",
+    "gerencia",
+    "marketing",
+    "supervisor_comercial",
+    "vendedor",
+    name="user_role",
+    validate_strings=True,
+)
 
 
 class User(Base):

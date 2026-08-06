@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session, require_cron_secret
-from app.services import programacion_service
+from app.services import crm_club_socio_service, crm_segmentacion_service, programacion_service
 
 router = APIRouter(tags=["cron"])
 logger = logging.getLogger("panacea_produccion_backend.cron")
@@ -38,3 +38,17 @@ async def monthly_cascade(session: AsyncSession = Depends(get_session)):
         next_year, next_month, now.year, now.month, result,
     )
     return result
+
+
+@router.post("/internal/cron/crm-recompute-segmentos", dependencies=[Depends(require_cron_secret)])
+async def crm_recompute_segmentos(session: AsyncSession = Depends(get_session)):
+    counts = await crm_segmentacion_service.recompute_all(session)
+    logger.info("crm-recompute-segmentos: %s", counts)
+    return {"segmentos_recalculados": len(counts), "counts": counts}
+
+
+@router.post("/internal/cron/crm-refresh-club-socios", dependencies=[Depends(require_cron_secret)])
+async def crm_refresh_club_socios(session: AsyncSession = Depends(get_session)):
+    refreshed = await crm_club_socio_service.refresh_all(session)
+    logger.info("crm-refresh-club-socios: %s rows refreshed", refreshed)
+    return {"refreshed": refreshed}

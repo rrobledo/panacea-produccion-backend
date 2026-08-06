@@ -13,6 +13,13 @@ from app.routers import (
     clientes,
     compras,
     costeo,
+    crm_campanas,
+    crm_club_socios,
+    crm_contactos,
+    crm_dashboards,
+    crm_oportunidades,
+    crm_segmentacion,
+    crm_visitas,
     cron,
     cuenta_corriente_ledger,
     insumos,
@@ -97,3 +104,14 @@ app.include_router(programacion.router, prefix="/costos")
 app.include_router(cron.router)
 app.include_router(auth_router)
 app.include_router(profile.router)
+
+app.include_router(crm_contactos.contacto_router)
+app.include_router(crm_contactos.empresa_router)
+app.include_router(crm_contactos.catalogos_router)
+app.include_router(crm_contactos.vendedor_router)
+app.include_router(crm_campanas.router)
+app.include_router(crm_segmentacion.router)
+app.include_router(crm_visitas.router)
+app.include_router(crm_oportunidades.router)
+app.include_router(crm_club_socios.router)
+app.include_router(crm_dashboards.router)

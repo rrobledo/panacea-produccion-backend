@@ -1,12 +1,16 @@
 import os
+import uuid
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.auth.utils import create_token
+from app.config import get_settings
 from app.deps import get_session, require_api_key
 from app.main import app
+from app.models.user import User
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://panacea:panacea@localhost:55432/panacea_test"
@@ -14,6 +18,21 @@ TEST_DATABASE_URL = os.environ.get(
 
 TRUNCATE_TABLES = [
     "users",
+    "crm_auditoria",
+    "crm_club_socio_cache",
+    "crm_actividad",
+    "crm_oportunidad",
+    "crm_visita",
+    "crm_contacto_segmento",
+    "crm_segmento",
+    "crm_contacto_campana",
+    "crm_campana",
+    "crm_contacto",
+    "crm_empresa",
+    "crm_vendedor",
+    "crm_rubro",
+    "crm_ciudad",
+    "crm_origen",
     "compras_movimiento_cc",
     "compras_pago_aplicacion",
     "compras_pago_medio",
@@ -71,3 +90,26 @@ async def client(session):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def auth_header(session, monkeypatch):
+    """Async factory: `await auth_header("vendedor")` -> Authorization header dict.
+
+    Creates a `users` row with the given role and mints a real JWT for it
+    (bypassing /auth/register, which always forces role="user") so tests can
+    exercise `require_role`-gated CRM endpoints for any commercial role.
+    """
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key")
+    get_settings.cache_clear()
+
+    async def _make(role: str, email: str | None = None) -> dict:
+        user = User(email=email or f"{role}-{uuid.uuid4().hex[:8]}@example.com", role=role)
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        token = create_token(user.id, user.email, user.role)
+        return {"Authorization": f"Bearer {token}"}
+
+    yield _make
+    get_settings.cache_clear()

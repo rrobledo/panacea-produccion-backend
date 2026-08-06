@@ -3,6 +3,8 @@ from fastapi import HTTPException, status
 from app.auth import passport
 from app.models.user import User
 
+CRM_ROLES = ("admin", "gerencia", "marketing", "supervisor_comercial", "vendedor")
+
 
 def require_role(*roles: str):
     def check(current_user: User = passport.authenticate("jwt")) -> User:

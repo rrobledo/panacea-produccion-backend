@@ -39,3 +39,26 @@ CompraDetalleTipo = Literal["INSUMO", "ITEM_GASTO", "LIBRE"]
 CompraEstado = Literal["PENDIENTE", "PARCIAL", "PAGADO"]
 OrdenCompraEstado = Literal["PENDIENTE", "PARCIAL", "RECIBIDA", "CERRADA", "CANCELADA"]
 MovimientoCCTipo = Literal["FACTURA", "PAGO", "NOTA_CREDITO", "NOTA_DEBITO"]
+
+ContactoTipo = Literal["B2B", "B2C"]
+
+EtapaVentaNombre = Literal[
+    "Lead",
+    "Visita",
+    "Interesado",
+    "Muestras",
+    "Presupuesto",
+    "Negociacion",
+    "Primera Compra",
+    "Cliente Activo",
+]
+ETAPA_VENTA_ORDEN: list[str] = [
+    "Lead",
+    "Visita",
+    "Interesado",
+    "Muestras",
+    "Presupuesto",
+    "Negociacion",
+    "Primera Compra",
+    "Cliente Activo",
+]

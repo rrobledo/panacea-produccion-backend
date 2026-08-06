@@ -178,6 +178,37 @@ remito's estado has advanced past `PENDIENTE` — use the new `PATCH
 defaults to `solo_habilitados=true` (excludes disabled productos); pass
 `solo_habilitados=false` for the old behavior.
 
+## CRM (crm-comercial-integrado)
+
+New commercial CRM module — contacts, campaigns, visits, opportunities,
+segmentation, dashboards/KPIs, and read-only integrations with this same
+backend's client-sales data and the (external) Club de Socios system. See
+`openspec/changes/crm-comercial-integrado/{proposal,design}.md` for the
+full rationale. All new endpoints live under `/crm`, not `/costos` — this
+is a separate domain, not part of the costing/production API. Role
+gating uses the same JWT `require_role` mechanism as the rest of the app,
+extended with four new roles (`gerencia`, `marketing`,
+`supervisor_comercial`, `vendedor`) alongside the existing `admin`/`user`.
+
+| Endpoint | Purpose |
+|---|---|
+| `/crm/contactos` | `Contacto` CRUD (B2B/B2C), optional links to `Empresa`, `Rubro`/`Ciudad`/`Origen` catalogs, and `erp_cliente_id` (nullable FK to `clientes`) |
+| `/crm/empresas`, `/crm/catalogos/{rubros,ciudades,origenes}`, `/crm/vendedores` | Supporting catalogs and vendor profiles (`Vendedor` optionally links to an existing `users` row via `user_id`, it isn't a separate identity) |
+| `/crm/contactos/{id}/erp-cliente` (PUT), `/crm/contactos/autovincular-erp` (POST) | Manual and best-effort automatic (by matching email) linking of a `Contacto` to an ERP `clientes` row |
+| `/crm/contactos/{id}/compras`, `/crm/contactos/{id}/productos-mas-consumidos` | Read-only purchase history and top products, sourced from `panacea_sales_v2` (client sales facts) — **not** `compras_compra`, which is this app's own supplier-purchasing ledger and unrelated to CRM |
+| `/crm/campanas` | `Campaña` CRUD, contact association (`POST /{id}/contactos`, idempotent), conversion counts (`GET /{id}/conversion`) |
+| `/crm/segmentos` | `Segmento` CRUD with a JSON `criterio` (AND-filter over Contacto attributes), membership recompute (`POST /recompute`, manual) and its cron twin `POST /internal/cron/crm-recompute-segmentos` |
+| `/crm/visitas` | `Visita` CRUD, linking a `Contacto` and a `Vendedor` |
+| `/crm/oportunidades` | `Oportunidad` pipeline over a fixed `Etapa_Venta` sequence (Lead → ... → Primera Compra → Cliente Activo); reaching "Primera Compra" requires the contact's `erp_cliente_id` to already have a sale in `panacea_sales_v2`. `Actividad` sub-resource per oportunidad |
+| `/crm/contactos/{id}/club-socio` | Local cache of the (external, contract still TBD) Club de Socios membership state; refreshed by `POST /internal/cron/crm-refresh-club-socios`, never called synchronously from a user-facing read |
+| `/crm/dashboards/{ejecutivo,vendedor/{id},marketing,contacto/{id}}` | KPI dashboards (conversion, CAC, CLV/ticket promedio, ventas por ciudad/segmento/vendedor, clientes inactivos, ROI de campaña). `vendedor/{id}` is self-scoped for the `vendedor` role |
+| `/crm/dashboards/reportes/{ventas-por-segmento,clientes-inactivos}` | Same KPI data as CSV via `?formato=csv` |
+
+All CRM write endpoints use the same DB and JWT auth as the rest of this
+backend — no external object storage, no separate API-key scheme. The two
+internal cron endpoints (`crm-recompute-segmentos`, `crm-refresh-club-socios`)
+use `require_cron_secret`, same as the existing `monthly-cascade` job.
+
 ## Run the tests
 
 Start the local Postgres container first (see above), then:
