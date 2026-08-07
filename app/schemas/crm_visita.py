@@ -20,3 +20,13 @@ class CrmVisitaRead(CrmVisitaBase):
 
     id: int
     created_at: datetime
+
+
+class CrmVisitaAdjuntoRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    visita_id: int
+    nombre: str
+    tipo: str | None
+    fecha: datetime

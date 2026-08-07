@@ -102,6 +102,28 @@
       ser usable end-to-end.
 - [x] 5.3 Tests: alta de visita, rechazo por contacto/vendedor
       inexistente, auditoría de alta.
+- [x] 5.4 (Follow-up) Adjuntos de audio/video/imagen sobre una Visita, "para
+      luego ser analizadas". Migración `crm_visita_adjunto`
+      (`migrations/0018_crm_visita_adjuntos.sql` + espejo
+      `docker/init-db/22_crm_visita_adjuntos.sql`), mismo patrón que
+      `compras_compra_adjunto`/`compras_pago_adjunto`: contenido guardado
+      directo en Postgres (`BYTEA`, columna `deferred` para no arrastrar
+      bytes en listados), no un object storage externo. Modelo
+      `CrmVisitaAdjunto` + schema `CrmVisitaAdjuntoRead` +
+      `crm_visita_service.add_adjunto/list_adjuntos/get_adjunto` + 3
+      endpoints en `crm_visitas.py`
+      (`POST/GET /crm/visitas/{id}/adjuntos`,
+      `GET /crm/visitas/{id}/adjuntos/{adjunto_id}`). Sólo acepta
+      `audio/*`, `video/*`, `image/*` (rechaza cualquier otro content-type
+      con 400) y un máximo de 4MB por archivo (413 si se supera) — ese
+      límite es el default de Vercel para el body de una función
+      serverless; subir el número no alcanza para archivos más grandes,
+      hace falta una arquitectura distinta (upload directo a un object
+      storage con URL prefirmada). Sin endpoint de borrado todavía (mismo
+      alcance que el precedente de compras/pagos). Tests: sube
+      imagen/audio/video, rechaza tipo no soportado, rechaza visita
+      inexistente (404), rechaza adjunto inexistente (404). Suite completa:
+      228 tests, verde.
 
 ## 6. Oportunidades (`crm-oportunidades`)
 

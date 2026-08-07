@@ -37,3 +37,35 @@ user, and timestamp (RN-005).
 - **WHEN** se crea una `Visita`
 - **THEN** se crea una entrada de auditoría registrando el usuario que la
   creó y la fecha
+
+### Requirement: Adjuntos de audio, video o imagen sobre una visita
+The system SHALL allow uploading audio, video, or image files attached to a
+`Visita`, for later analysis, storing the file content directly in Postgres
+(same pattern as `compras_compra_adjunto`/`compras_pago_adjunto`) rather
+than an external object store. Non audio/video/image content types SHALL be
+rejected, and files over 4MB SHALL be rejected with a clear error instead
+of relying on the platform's opaque request-size limit.
+
+#### Scenario: Subir un adjunto de imagen
+- **WHEN** se sube un archivo `image/*` a una `Visita` existente
+- **THEN** el archivo queda guardado y aparece en el listado de adjuntos
+  de esa visita
+
+#### Scenario: Subir un adjunto de audio o video
+- **WHEN** se sube un archivo `audio/*` o `video/*` a una `Visita`
+  existente
+- **THEN** el archivo queda guardado igual que un adjunto de imagen
+
+#### Scenario: Tipo de archivo no soportado es rechazado
+- **WHEN** se intenta subir un archivo que no es audio, video ni imagen
+  (por ejemplo un PDF)
+- **THEN** el sistema rechaza la operación con un error 400
+
+#### Scenario: Archivo más grande que el límite es rechazado
+- **WHEN** se intenta subir un archivo de más de 4MB
+- **THEN** el sistema rechaza la operación con un error claro en vez de
+  dejar que la plataforma corte la request
+
+#### Scenario: Descargar un adjunto inexistente
+- **WHEN** se pide un adjunto que no existe (o no pertenece a esa visita)
+- **THEN** el sistema responde 404
