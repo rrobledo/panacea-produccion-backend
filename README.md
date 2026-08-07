@@ -185,10 +185,15 @@ segmentation, dashboards/KPIs, and read-only integrations with this same
 backend's client-sales data and the (external) Club de Socios system. See
 `openspec/changes/crm-comercial-integrado/{proposal,design}.md` for the
 full rationale. All new endpoints live under `/crm`, not `/costos` — this
-is a separate domain, not part of the costing/production API. Role
-gating uses the same JWT `require_role` mechanism as the rest of the app,
-extended with four new roles (`gerencia`, `marketing`,
-`supervisor_comercial`, `vendedor`) alongside the existing `admin`/`user`.
+is a separate domain, not part of the costing/production API. Every `/crm/*`
+endpoint requires a valid JWT (`require_authenticated()`), but — per an
+explicit follow-up decision — does **not** check the caller's role beyond
+that; the four commercial roles added for this module (`gerencia`,
+`marketing`, `supervisor_comercial`, `vendedor`, alongside the existing
+`admin`/`user`) exist in the `user_role` enum but aren't currently enforced
+on any CRM endpoint. The one exception is `dashboard_vendedor`, which still
+keeps a `vendedor` from viewing another vendedor's dashboard by id — that's
+a data-isolation check, not role gating.
 
 | Endpoint | Purpose |
 |---|---|

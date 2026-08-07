@@ -30,13 +30,14 @@ The system SHALL expose an authenticated endpoint that triggers an
 immediate recompute of segment membership, independent of the scheduled
 job.
 
-#### Scenario: Recompute manual con rol autorizado
-- **WHEN** un usuario con rol autorizado invoca el endpoint de recompute
-  manual
+#### Scenario: Recompute manual con sesión autenticada
+- **WHEN** un usuario autenticado (cualquier rol — el endpoint ya no exige
+  un rol comercial específico, ver `role-authorization`) invoca el
+  endpoint de recompute manual
 - **THEN** el sistema recalcula `Contacto_Segmento` para todos los
   `Segmento` y actualiza su timestamp de recálculo
 
-#### Scenario: Recompute manual sin rol autorizado
-- **WHEN** un usuario sin rol autorizado invoca el endpoint de recompute
-  manual
-- **THEN** el sistema responde con 403 forbidden y no recalcula nada
+#### Scenario: Recompute manual sin sesión
+- **WHEN** un usuario sin token de autenticación válido invoca el
+  endpoint de recompute manual
+- **THEN** el sistema responde con 401 unauthorized y no recalcula nada

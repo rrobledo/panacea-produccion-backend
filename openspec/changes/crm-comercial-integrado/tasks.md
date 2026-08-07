@@ -15,6 +15,27 @@
 - [x] 1.5 Tests: nuevos roles aceptados por `require_role`, migración de
       roles no rompe usuarios/roles existentes, helper de auditoría
       persiste una entrada correctamente.
+- [x] 1.6 (Follow-up) Por pedido explícito, se removió el chequeo de rol en
+      los endpoints `/crm/*`: se agregó `require_authenticated()` en
+      `app/auth/dependencies.py` (acepta cualquier JWT válido, sin mirar
+      `role`) y los 7 routers CRM (`crm_contactos`, `crm_campanas`,
+      `crm_visitas`, `crm_oportunidades`, `crm_segmentacion`,
+      `crm_club_socios`, `crm_dashboards`) pasaron de
+      `require_role(*CRM_ROLES)`/`require_role(*EJECUTIVO_ROLES)`/etc. a
+      `require_authenticated()`. Login (JWT) sigue siendo obligatorio — solo
+      se dejó de exigir un rol comercial específico. El chequeo de
+      auto-scoping de `dashboard_vendedor` (un `vendedor` no puede ver el
+      dashboard de otro vendedor) se mantuvo intacto, por ser una regla de
+      aislamiento de datos y no un control de rol. `require_role` y el enum
+      `user_role` no se tocaron — siguen disponibles para cualquier otro
+      endpoint que sí necesite roles. Constantes que quedaron sin uso
+      (`CRM_ROLES`, `EJECUTIVO_ROLES`, `VENDEDOR_ROLES`, `MARKETING_ROLES`,
+      `CONTACTO_ROLES`) se eliminaron. 3 tests que verificaban 403 por rol
+      se actualizaron para reflejar el nuevo comportamiento (200 en vez de
+      403 para roles no comerciales); toda la suite (223 tests) sigue en
+      verde. Specs actualizadas: `role-authorization` (nuevo requirement
+      `require_authenticated`), `crm-dashboards-kpis` y `crm-segmentacion`
+      (escenarios que mencionaban "rol autorizado").
 
 ## 2. Contactos, empresas y catálogos (`crm-contactos`)
 

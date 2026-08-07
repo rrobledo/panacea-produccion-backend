@@ -6,8 +6,9 @@ company-wide commercial KPIs (conversion rates, CAC, CLV, sales by
 segment/city/vendor) over a selectable date range.
 
 #### Scenario: Consultar dashboard ejecutivo
-- **WHEN** un usuario con rol autorizado (Administrador o Gerencia)
-  consulta el dashboard ejecutivo para un rango de fechas
+- **WHEN** un usuario autenticado (cualquier rol — el endpoint ya no exige
+  un rol comercial específico, ver `role-authorization`) consulta el
+  dashboard ejecutivo para un rango de fechas
 - **THEN** el sistema devuelve los KPIs agregados para ese rango
 
 ### Requirement: Dashboard de vendedor
@@ -31,8 +32,8 @@ performance (conversion campaña→registro→primera compra, ROI por
 campaña) and segment composition.
 
 #### Scenario: Consultar dashboard de marketing
-- **WHEN** un usuario con rol autorizado (Marketing, Gerencia o
-  Administrador) consulta el dashboard de marketing
+- **WHEN** un usuario autenticado (cualquier rol) consulta el dashboard de
+  marketing
 - **THEN** el sistema devuelve las métricas de campañas y segmentos
 
 ### Requirement: KPIs de conversión y campaña
@@ -89,8 +90,8 @@ The system SHALL expose sales aggregated by `Segmento`, `Ciudad`, and
 The system SHALL allow exporting any KPI/dashboard result set as CSV.
 
 #### Scenario: Exportar reporte de ventas por segmento
-- **WHEN** un usuario con rol autorizado solicita la exportación de
-  ventas por segmento
+- **WHEN** un usuario autenticado (cualquier rol) solicita la exportación
+  de ventas por segmento
 - **THEN** el sistema devuelve un archivo CSV con esos datos
 
 ### Requirement: Dashboard 360° de cliente

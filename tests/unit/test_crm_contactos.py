@@ -119,10 +119,12 @@ async def test_crm_endpoints_require_authentication(client):
     assert response.status_code == 401
 
 
-async def test_crm_endpoints_reject_non_commercial_role(client, auth_header):
+async def test_crm_endpoints_allow_any_authenticated_role(client, auth_header):
+    # require_role(*CRM_ROLES) was replaced by require_authenticated(): any
+    # valid session is accepted now, not just the commercial roles.
     headers = await auth_header("user")
     response = await client.get("/crm/contactos", headers=headers)
-    assert response.status_code == 403
+    assert response.status_code == 200
 
 
 async def test_create_and_list_vendedor(client, auth_header):

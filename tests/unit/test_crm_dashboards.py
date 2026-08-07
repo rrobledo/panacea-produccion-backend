@@ -27,10 +27,12 @@ async def _seed_venta(session, cliente_id: int, subtotal: float = 1000, operatio
     await session.commit()
 
 
-async def test_dashboard_ejecutivo_requiere_rol_gerencial(client, auth_header):
+async def test_dashboard_ejecutivo_no_requiere_rol_especifico(client, auth_header):
+    # CRM endpoints only require a valid session now, not a specific role
+    # (require_role(*EJECUTIVO_ROLES) was replaced by require_authenticated()).
     headers = await auth_header("vendedor")
     response = await client.get("/crm/dashboards/ejecutivo", headers=headers)
-    assert response.status_code == 403
+    assert response.status_code == 200
 
 
 async def test_dashboard_ejecutivo_devuelve_kpis(client, auth_header, session):

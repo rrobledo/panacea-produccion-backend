@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import CRM_ROLES, require_role
+from app.auth.dependencies import require_authenticated
 from app.deps import get_session
 from app.models.user import User
 from app.schemas.crm_visita import CrmVisitaCreate, CrmVisitaRead
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/crm/visitas", tags=["crm-visitas"])
 async def list_visitas(
     contacto_id: int | None = None,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(require_role(*CRM_ROLES)),
+    current_user: User = Depends(require_authenticated()),
 ):
     return await crm_visita_service.list_visitas(session, contacto_id=contacto_id)
 
@@ -23,7 +23,7 @@ async def list_visitas(
 async def create_visita(
     payload: CrmVisitaCreate,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(require_role(*CRM_ROLES)),
+    current_user: User = Depends(require_authenticated()),
 ):
     return await crm_visita_service.create_visita(session, payload, usuario_id=current_user.id)
 
@@ -32,6 +32,6 @@ async def create_visita(
 async def get_visita(
     visita_id: int,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(require_role(*CRM_ROLES)),
+    current_user: User = Depends(require_authenticated()),
 ):
     return await crm_visita_service.get_visita(session, visita_id)

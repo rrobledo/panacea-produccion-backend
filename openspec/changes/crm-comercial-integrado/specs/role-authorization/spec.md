@@ -28,12 +28,27 @@ code change to `require_role` itself.
 - **WHEN** an endpoint is guarded by `require_role("admin", "user")`
 - **THEN** a valid JWT with either role is allowed through
 
-#### Scenario: CRM commercial role is allowed on a CRM endpoint
-- **WHEN** a request carries a valid JWT with `role="vendedor"` and hits a
-  CRM endpoint guarded by `require_role("vendedor", "supervisor_comercial", "admin")`
+Note: the CRM routers (`app/routers/crm_*.py`) do **not** use `require_role`
+— see the `require_authenticated` requirement below. `require_role` remains
+available as generic infrastructure for any endpoint that does need
+role-scoped access, CRM or otherwise.
+
+### Requirement: Authentication-only endpoint access (no role check)
+The system SHALL provide a `require_authenticated()` dependency that accepts
+any request carrying a valid bearer JWT, regardless of the token's `role`
+claim. All `/crm/*` endpoints use this dependency instead of `require_role`
+— CRM access originally required one of the commercial roles (`admin`,
+`gerencia`, `marketing`, `supervisor_comercial`, `vendedor`); that
+role restriction was explicitly removed per a follow-up request, while
+still requiring a valid logged-in session.
+
+#### Scenario: Any authenticated role reaches a CRM endpoint
+- **WHEN** a request carries a valid JWT with `role="user"` (not one of the
+  former commercial roles) and hits a CRM endpoint guarded by
+  `require_authenticated()`
 - **THEN** the request proceeds to the endpoint handler
 
-#### Scenario: Non-commercial role is forbidden on a CRM endpoint
-- **WHEN** a request carries a valid JWT with `role="user"` and hits a CRM
-  endpoint guarded by `require_role("marketing", "gerencia", "admin")`
-- **THEN** the system responds with 403 forbidden
+#### Scenario: Missing or invalid token is still unauthorized
+- **WHEN** a request has no bearer token, or an expired/invalid one, and
+  hits a CRM endpoint guarded by `require_authenticated()`
+- **THEN** the system responds with 401 unauthorized

@@ -64,10 +64,12 @@ async def test_recompute_remueve_contactos_que_dejan_de_cumplir(client, auth_hea
     assert miembros.json() == []
 
 
-async def test_recompute_manual_respeta_require_role(client, auth_header):
+async def test_recompute_manual_no_requiere_rol_especifico(client, auth_header):
+    # require_role(*CRM_ROLES) was replaced by require_authenticated(): any
+    # valid session can trigger a manual recompute now.
     headers = await auth_header("user")
     response = await client.post("/crm/segmentos/recompute", headers=headers)
-    assert response.status_code == 403
+    assert response.status_code == 200
 
 
 async def test_recompute_actualiza_timestamp(client, auth_header):
