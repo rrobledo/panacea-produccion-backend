@@ -124,13 +124,54 @@ async def test_upload_adjunto_accepts_audio_and_video(client, auth_header):
     assert video.status_code == 201
 
 
+async def test_upload_adjunto_accepts_documents(client, auth_header):
+    headers = await auth_header("vendedor")
+    visita = await _create_visita(client, headers)
+
+    pdf = await client.post(
+        f"/crm/visitas/{visita['id']}/adjuntos",
+        files={"file": ("nota.pdf", b"fake-pdf", "application/pdf")},
+        headers=headers,
+    )
+    assert pdf.status_code == 201
+
+    txt = await client.post(
+        f"/crm/visitas/{visita['id']}/adjuntos",
+        files={"file": ("nota.txt", b"fake-text", "text/plain")},
+        headers=headers,
+    )
+    assert txt.status_code == 201
+
+    # El navegador no siempre manda un content_type útil para .md
+    md = await client.post(
+        f"/crm/visitas/{visita['id']}/adjuntos",
+        files={"file": ("nota.md", b"# fake markdown", "application/octet-stream")},
+        headers=headers,
+    )
+    assert md.status_code == 201
+    assert md.json()["tipo"] == "text/markdown"
+
+    docx = await client.post(
+        f"/crm/visitas/{visita['id']}/adjuntos",
+        files={
+            "file": (
+                "nota.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers=headers,
+    )
+    assert docx.status_code == 201
+
+
 async def test_upload_adjunto_rejects_unsupported_type(client, auth_header):
     headers = await auth_header("vendedor")
     visita = await _create_visita(client, headers)
 
     response = await client.post(
         f"/crm/visitas/{visita['id']}/adjuntos",
-        files={"file": ("nota.pdf", b"fake-pdf", "application/pdf")},
+        files={"file": ("nota.zip", b"fake-zip", "application/zip")},
         headers=headers,
     )
     assert response.status_code == 400

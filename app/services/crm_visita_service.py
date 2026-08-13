@@ -1,3 +1,5 @@
+import os
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,9 +11,33 @@ from app.models.crm_visita import CrmVisita, CrmVisitaAdjunto
 from app.schemas.crm_visita import CrmVisitaCreate
 from app.services import crm_auditoria_service
 
-# Tipos aceptados para adjuntos de Visita — audio/video/imagen "para luego ser
-# analizadas", no documentos genéricos.
-ADJUNTO_TIPOS_PERMITIDOS = ("audio/", "video/", "image/")
+# Tipos aceptados para adjuntos de Visita: multimedia (para luego ser
+# analizada) más documentos de texto habituales de una visita.
+ADJUNTO_PREFIJOS_PERMITIDOS = ("audio/", "video/", "image/")
+ADJUNTO_TIPOS_EXACTOS_PERMITIDOS = {
+    "application/pdf",
+    "text/plain",
+    "text/markdown",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+# El navegador no siempre manda un content_type útil para estas extensiones
+# (pasa seguido con .md, y a veces con .doc/.docx) — se usa como fallback.
+ADJUNTO_EXTENSION_A_TIPO = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def _tipo_efectivo(filename: str, content_type: str | None) -> str | None:
+    if content_type and content_type != "application/octet-stream":
+        return content_type
+    extension = os.path.splitext(filename)[1].lower()
+    return ADJUNTO_EXTENSION_A_TIPO.get(extension, content_type)
+
 
 # Vercel's default serverless request body limit is 4.5MB — este límite se
 # aplica antes para dar un error claro en vez de que el platform lo corte
@@ -60,10 +86,13 @@ async def add_adjunto(
 ) -> CrmVisitaAdjunto:
     await get_visita(session, visita_id)  # 404 if missing
 
-    if not content_type or not content_type.startswith(ADJUNTO_TIPOS_PERMITIDOS):
+    tipo = _tipo_efectivo(filename, content_type)
+    if not tipo or not (
+        tipo.startswith(ADJUNTO_PREFIJOS_PERMITIDOS) or tipo in ADJUNTO_TIPOS_EXACTOS_PERMITIDOS
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Sólo se aceptan archivos de audio, video o imagen",
+            detail="Sólo se aceptan archivos de audio, video, imagen, PDF, texto (.txt/.md) o Word",
         )
     if len(content) > ADJUNTO_MAX_BYTES:
         raise HTTPException(
@@ -71,7 +100,7 @@ async def add_adjunto(
             detail=f"El archivo supera el máximo permitido ({ADJUNTO_MAX_BYTES // (1024 * 1024)}MB)",
         )
 
-    row = CrmVisitaAdjunto(visita_id=visita_id, nombre=filename, contenido=content, tipo=content_type)
+    row = CrmVisitaAdjunto(visita_id=visita_id, nombre=filename, contenido=content, tipo=tipo)
     session.add(row)
     await session.commit()
     await session.refresh(row)
