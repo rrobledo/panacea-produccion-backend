@@ -28,6 +28,8 @@ from app.routers import (
     misc,
     ordenes_compra,
     pagos,
+    pedidos,
+    pedidos_reportes,
     planning,
     produccion_stats,
     productos,
@@ -35,7 +37,7 @@ from app.routers import (
     programacion,
     proveedores,
     remitos,
-    remitos_reportes,
+    sucursales,
     ventas,
 )
 
@@ -96,7 +98,9 @@ app.include_router(costeo.router, prefix="/costos")
 app.include_router(misc.router, prefix="/costos")
 app.include_router(clientes.router, prefix="/costos")
 app.include_router(remitos.router, prefix="/costos")
-app.include_router(remitos_reportes.router, prefix="/costos")
+app.include_router(pedidos.router, prefix="/costos")
+app.include_router(pedidos_reportes.router, prefix="/costos")
+app.include_router(sucursales.router, prefix="/costos")
 app.include_router(produccion_stats.router, prefix="/costos")
 app.include_router(ventas.router, prefix="/costos")
 app.include_router(planning.router, prefix="/costos")

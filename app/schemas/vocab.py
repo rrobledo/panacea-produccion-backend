@@ -62,3 +62,40 @@ ETAPA_VENTA_ORDEN: list[str] = [
     "Primera Compra",
     "Cliente Activo",
 ]
+
+SucursalTipo = Literal["SUCURSAL", "FABRICA"]
+
+PedidoEstado = Literal["PENDIENTE", "EN_PREPARACION", "PREPARADO", "LISTO_PARA_ENTREGA", "ENTREGADO", "CANCELADO"]
+# Each non-CANCELADO estado's single valid next step (linear sequence, see
+# openspec/changes/pedidos-y-remitos/specs/pedidos/spec.md).
+PEDIDO_VALID_TRANSITIONS: dict[str, str] = {
+    "PENDIENTE": "EN_PREPARACION",
+    "EN_PREPARACION": "PREPARADO",
+    "PREPARADO": "LISTO_PARA_ENTREGA",
+    "LISTO_PARA_ENTREGA": "ENTREGADO",
+}
+# Historial de estados: campo de fecha que registra el momento en que se
+# alcanzó cada estado (incluye CANCELADO, transición lateral aparte de la
+# secuencia de arriba) — mismo propósito que REMITO_ESTADO_TIMESTAMP_FIELD.
+PEDIDO_ESTADO_TIMESTAMP_FIELD: dict[str, str] = {
+    "EN_PREPARACION": "fecha_en_preparacion",
+    "PREPARADO": "fecha_preparado",
+    "LISTO_PARA_ENTREGA": "fecha_listo_para_entrega",
+    "ENTREGADO": "fecha_entregado",
+    "CANCELADO": "fecha_cancelado",
+}
+
+RemitoTipo = Literal["VENTA", "TRANSFERENCIA"]
+
+RemitoEstado = Literal["LISTO", "EN_TRANSITO", "RECIBIDO"]
+# El remito nace en LISTO (fecha_listo se setea en el momento de creación,
+# no hay más paso PENDIENTE/EN_PREPARACION previo — ver
+# openspec/changes/pedidos-y-remitos/specs/remitos/spec.md).
+REMITO_VALID_TRANSITIONS: dict[str, str] = {
+    "LISTO": "EN_TRANSITO",
+    "EN_TRANSITO": "RECIBIDO",
+}
+REMITO_ESTADO_TIMESTAMP_FIELD: dict[str, str] = {
+    "EN_TRANSITO": "fecha_despacho",
+    "RECIBIDO": "fecha_recibido",
+}

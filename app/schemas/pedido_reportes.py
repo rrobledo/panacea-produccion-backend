@@ -1,17 +1,17 @@
 from pydantic import BaseModel
 
-from app.schemas.remitos import RemitoRead
+from app.schemas.pedido import PedidoRead
 
 
-class RemitosPendientesPorDia(BaseModel):
+class PedidosPendientesPorDia(BaseModel):
     fecha: str
-    total_remitos: int
+    total_pedidos: int
     total_pendientes: int
     total_en_preparacion: int
     total_listo_para_entrega: int
-    total_en_camino: int
     total_entregados: int
-    remitos: list[RemitoRead]
+    total_cancelados: int
+    pedidos: list[PedidoRead]
 
 
 class ProductoPendienteItem(BaseModel):
