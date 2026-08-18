@@ -65,6 +65,8 @@ ETAPA_VENTA_ORDEN: list[str] = [
 
 SucursalTipo = Literal["SUCURSAL", "FABRICA"]
 
+PedidoTipo = Literal["CLIENTE", "SUCURSAL"]
+
 PedidoEstado = Literal["PENDIENTE", "EN_PREPARACION", "PREPARADO", "LISTO_PARA_ENTREGA", "ENTREGADO", "CANCELADO"]
 # Each non-CANCELADO estado's single valid next step (linear sequence, see
 # openspec/changes/pedidos-y-remitos/specs/pedidos/spec.md).

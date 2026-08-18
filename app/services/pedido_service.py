@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.pedido import Pedido, PedidoDetalle
 from app.models.remito import Remito, RemitoDetalle
+from app.models.sucursal import Sucursal
 from app.schemas.pedido import PedidoCreate, PedidoEntregaRequest, PedidoUpdate
 from app.schemas.vocab import PEDIDO_ESTADO_TIMESTAMP_FIELD, PEDIDO_VALID_TRANSITIONS
 
@@ -45,7 +46,9 @@ async def create_pedido(session: AsyncSession, payload: PedidoCreate) -> Pedido:
 
 async def list_pedidos(
     session: AsyncSession,
+    tipo: str | None = None,
     cliente_id: int | None = None,
+    sucursal_id: int | None = None,
     estado: str | None = None,
     fecha_desde: datetime | None = None,
     fecha_hasta: datetime | None = None,
@@ -53,8 +56,12 @@ async def list_pedidos(
     limit: int = 100,
 ) -> list[Pedido]:
     stmt = _pedido_stmt()
+    if tipo is not None:
+        stmt = stmt.where(Pedido.tipo == tipo)
     if cliente_id is not None:
         stmt = stmt.where(Pedido.cliente_id == cliente_id)
+    if sucursal_id is not None:
+        stmt = stmt.where(Pedido.sucursal_id == sucursal_id)
     if estado is not None:
         stmt = stmt.where(Pedido.estado == estado)
     if fecha_desde:
@@ -126,6 +133,24 @@ async def registrar_entrega(session: AsyncSession, pedido: Pedido, payload: Pedi
     return await get_pedido(session, pedido.id)
 
 
+async def _get_fabrica_sucursal(session: AsyncSession) -> Sucursal:
+    # Origen implícito de los remitos TRANSFERENCIA generados a partir de un
+    # Pedido tipo=SUCURSAL: la sucursal, al igual que un cliente, no elige
+    # su propio origen — siempre se despacha desde "la fábrica". Requiere
+    # que exista exactamente una Sucursal tipo=FABRICA.
+    result = await session.execute(select(Sucursal).where(Sucursal.tipo == "FABRICA"))
+    fabricas = list(result.scalars().all())
+    if len(fabricas) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "No se pudo determinar la sucursal de origen (Fábrica): debe existir "
+                f"exactamente una sucursal de tipo FABRICA (hay {len(fabricas)})"
+            ),
+        )
+    return fabricas[0]
+
+
 async def _generar_remito(session: AsyncSession, pedido: Pedido) -> None:
     # Only the lines whose cantidad_entregada grew since the last remito
     # generated for this pedido — see design.md Decision 3.
@@ -152,16 +177,30 @@ async def _generar_remito(session: AsyncSession, pedido: Pedido) -> None:
     # El pedido llegando a LISTO_PARA_ENTREGA/ENTREGADO ya documenta la
     # entrega en sí — el remito generado no necesita su propio seguimiento
     # de despacho/recepción, nace directamente en RECIBIDO.
-    remito = Remito(
-        tipo="VENTA",
-        cliente_id=pedido.cliente_id,
-        pedido_id=pedido.id,
-        vendedor=pedido.vendedor,
-        fecha_carga=now,
-        fecha_listo=now,
-        fecha_despacho=now,
-        fecha_recibido=now,
-    )
+    if pedido.tipo == "SUCURSAL":
+        fabrica = await _get_fabrica_sucursal(session)
+        remito = Remito(
+            tipo="TRANSFERENCIA",
+            origen_sucursal_id=fabrica.id,
+            destino_sucursal_id=pedido.sucursal_id,
+            pedido_id=pedido.id,
+            vendedor=pedido.vendedor,
+            fecha_carga=now,
+            fecha_listo=now,
+            fecha_despacho=now,
+            fecha_recibido=now,
+        )
+    else:
+        remito = Remito(
+            tipo="VENTA",
+            cliente_id=pedido.cliente_id,
+            pedido_id=pedido.id,
+            vendedor=pedido.vendedor,
+            fecha_carga=now,
+            fecha_listo=now,
+            fecha_despacho=now,
+            fecha_recibido=now,
+        )
     session.add(remito)
     await session.flush()
     for detalle, incremento in incrementos:

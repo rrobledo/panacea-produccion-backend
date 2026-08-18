@@ -37,6 +37,11 @@ async def _create_pedido(client, cliente_id, detalles=None):
     return resp.json()
 
 
+async def _make_sucursal(client, nombre, tipo="SUCURSAL"):
+    resp = await client.post("/costos/sucursales", json={"nombre": nombre, "tipo": tipo})
+    return resp.json()["id"]
+
+
 async def test_crear_pedido_con_detalle(client, session):
     await _make_cliente(session, 1)
     producto = await _make_producto(session)
@@ -154,3 +159,72 @@ async def test_cancelar_pedido_pendiente(client, session):
     assert resp.status_code == 200
     assert resp.json()["estado"] == "CANCELADO"
     assert resp.json()["fecha_cancelado"] is not None
+
+
+async def test_crear_pedido_tipo_sucursal(client, session):
+    sucursal_id = await _make_sucursal(client, "Centro")
+    now = datetime.now(timezone.utc)
+
+    resp = await client.post(
+        "/costos/pedidos",
+        json={
+            "tipo": "SUCURSAL",
+            "sucursal_id": sucursal_id,
+            "vendedor": "Ana",
+            "fecha_entrega": now.isoformat(),
+            "detalles": [],
+        },
+    )
+    assert resp.status_code == 201, resp.json()
+    body = resp.json()
+    assert body["tipo"] == "SUCURSAL"
+    assert body["cliente_id"] is None
+    assert body["sucursal_id"] == sucursal_id
+    assert body["sucursal"]["nombre"] == "Centro"
+
+
+async def test_pedido_sucursal_con_cliente_es_rechazado(client, session):
+    await _make_cliente(session, 11)
+    sucursal_id = await _make_sucursal(client, "Centro")
+    now = datetime.now(timezone.utc)
+
+    resp = await client.post(
+        "/costos/pedidos",
+        json={
+            "tipo": "SUCURSAL",
+            "sucursal_id": sucursal_id,
+            "cliente_id": 11,
+            "vendedor": "Ana",
+            "fecha_entrega": now.isoformat(),
+            "detalles": [],
+        },
+    )
+    assert resp.status_code == 400
+
+
+async def test_pedido_sucursal_sin_sucursal_id_es_rechazado(client, session):
+    now = datetime.now(timezone.utc)
+
+    resp = await client.post(
+        "/costos/pedidos",
+        json={"tipo": "SUCURSAL", "vendedor": "Ana", "fecha_entrega": now.isoformat(), "detalles": []},
+    )
+    assert resp.status_code == 400
+
+
+async def test_pedido_cliente_con_sucursal_es_rechazado(client, session):
+    await _make_cliente(session, 12)
+    sucursal_id = await _make_sucursal(client, "Centro")
+    now = datetime.now(timezone.utc)
+
+    resp = await client.post(
+        "/costos/pedidos",
+        json={
+            "cliente_id": 12,
+            "sucursal_id": sucursal_id,
+            "vendedor": "Ana",
+            "fecha_entrega": now.isoformat(),
+            "detalles": [],
+        },
+    )
+    assert resp.status_code == 400

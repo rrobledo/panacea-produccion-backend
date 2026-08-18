@@ -1,9 +1,11 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from app.schemas.clientes import ClienteRead
 from app.schemas.productos import ProductoRead
+from app.schemas.sucursal import SucursalRead
+from app.schemas.vocab import PedidoTipo
 
 
 class PedidoDetalleCreate(BaseModel):
@@ -32,8 +34,27 @@ class PedidoDetalleRead(BaseModel):
         )
 
 
-class PedidoCreate(BaseModel):
-    cliente_id: int
+class _PedidoTipoFieldsMixin(BaseModel):
+    tipo: PedidoTipo = "CLIENTE"
+    cliente_id: int | None = None
+    sucursal_id: int | None = None
+
+    @model_validator(mode="after")
+    def _validate_tipo_fields(self):
+        if self.tipo == "CLIENTE":
+            if self.cliente_id is None:
+                raise ValueError("cliente_id is required when tipo=CLIENTE")
+            if self.sucursal_id is not None:
+                raise ValueError("sucursal_id must be null when tipo=CLIENTE")
+        elif self.tipo == "SUCURSAL":
+            if self.cliente_id is not None:
+                raise ValueError("cliente_id must be null when tipo=SUCURSAL")
+            if self.sucursal_id is None:
+                raise ValueError("sucursal_id is required when tipo=SUCURSAL")
+        return self
+
+
+class PedidoCreate(_PedidoTipoFieldsMixin):
     vendedor: str
     observaciones: str | None = None
     fecha_entrega: datetime
@@ -50,8 +71,11 @@ class PedidoUpdate(BaseModel):
 
 class PedidoRead(BaseModel):
     id: int
+    tipo: str
     cliente_id: int | None
     cliente: ClienteRead | None
+    sucursal_id: int | None
+    sucursal: SucursalRead | None
     estado: str
     vendedor: str
     observaciones: str | None
@@ -68,8 +92,11 @@ class PedidoRead(BaseModel):
     def from_orm_row(cls, row) -> "PedidoRead":
         return cls(
             id=row.id,
+            tipo=row.tipo,
             cliente_id=row.cliente_id,
             cliente=ClienteRead.from_orm_row(row.cliente) if row.cliente else None,
+            sucursal_id=row.sucursal_id,
+            sucursal=SucursalRead.from_orm_row(row.sucursal) if row.sucursal else None,
             estado=row.estado,
             vendedor=row.vendedor,
             observaciones=row.observaciones,

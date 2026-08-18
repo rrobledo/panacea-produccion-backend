@@ -5,14 +5,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.clientes import Clientes
+from app.models.sucursal import Sucursal
 
 
 class Pedido(Base):
     __tablename__ = "pedidos_pedido"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(20), default="CLIENTE")
     cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.idcliente"), default=None)
     cliente: Mapped[Clientes | None] = relationship(lazy="joined")
+    sucursal_id: Mapped[int | None] = mapped_column(ForeignKey("sucursales_sucursal.id"), default=None)
+    sucursal: Mapped[Sucursal | None] = relationship(lazy="joined")
     vendedor: Mapped[str] = mapped_column(String(255))
     estado: Mapped[str] = mapped_column(String(20), default="PENDIENTE")
     fecha_carga: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -18,7 +18,9 @@ router = APIRouter(prefix="/pedidos", tags=["pedidos"])
 
 @router.get("", response_model=list[PedidoRead])
 async def list_pedidos(
+    tipo: str | None = None,
     cliente_id: int | None = None,
+    sucursal_id: int | None = None,
     estado: str | None = None,
     fecha_desde: datetime | None = Query(None, description="Filter by fecha_entrega >= fecha_desde"),
     fecha_hasta: datetime | None = Query(None, description="Filter by fecha_entrega <= fecha_hasta"),
@@ -28,7 +30,9 @@ async def list_pedidos(
 ):
     pedidos = await service.list_pedidos(
         session,
+        tipo=tipo,
         cliente_id=cliente_id,
+        sucursal_id=sucursal_id,
         estado=estado,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
