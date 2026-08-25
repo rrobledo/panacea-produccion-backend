@@ -228,3 +228,36 @@ async def test_pedido_cliente_con_sucursal_es_rechazado(client, session):
         },
     )
     assert resp.status_code == 400
+
+
+async def test_editar_pedido_preserva_fecha_creacion_de_items_existentes(client, session):
+    # update_pedido hace merge por producto_id en vez de borrar y recrear
+    # todas las filas de detalle, para poder distinguir items agregados al
+    # crear el pedido de los agregados despues en una edicion.
+    await _make_cliente(session, 31)
+    p1 = await _make_producto(session, codigo="P31A")
+    p2 = await _make_producto(session, codigo="P31B")
+
+    pedido = await _create_pedido(client, 31, detalles=[{"producto_id": p1.id, "cantidad_pedida": 5}])
+    detalle_id_original = pedido["detalles"][0]["id"]
+    fecha_creacion_original = pedido["detalles"][0]["fecha_creacion"]
+
+    resp = await client.put(
+        f"/costos/pedidos/{pedido['id']}",
+        json={
+            "detalles": [
+                {"producto_id": p1.id, "cantidad_pedida": 8},
+                {"producto_id": p2.id, "cantidad_pedida": 3},
+            ]
+        },
+    )
+    assert resp.status_code == 200
+    detalles = {d["producto_id"]: d for d in resp.json()["detalles"]}
+
+    original = detalles[p1.id]
+    assert original["id"] == detalle_id_original
+    assert original["cantidad_pedida"] == 8
+    assert original["fecha_creacion"] == fecha_creacion_original
+
+    nuevo = detalles[p2.id]
+    assert nuevo["id"] != detalle_id_original

@@ -100,8 +100,31 @@ async def update_remito(session: AsyncSession, remito: Remito, payload: RemitoUp
         setattr(remito, field, value)
 
     if payload.detalles is not None:
-        await session.execute(RemitoDetalle.__table__.delete().where(RemitoDetalle.remito_id == remito.id))
-        _add_detalle_rows(session, remito.id, payload.detalles)
+        # Merge by producto_id instead of delete-and-recreate, so
+        # fecha_creacion is preserved on items that already existed — it
+        # only advances for genuinely new lines. See RemitoDetalle.fecha_creacion.
+        existentes = {d.producto_id: d for d in remito.detalles}
+        vistos: set[int] = set()
+        for item in payload.detalles:
+            if item.cantidad <= 0:
+                continue
+            vistos.add(item.producto_id)
+            detalle = existentes.get(item.producto_id)
+            if detalle is not None:
+                detalle.cantidad = item.cantidad
+                detalle.observaciones = item.observaciones
+            else:
+                session.add(
+                    RemitoDetalle(
+                        remito_id=remito.id,
+                        producto_id=item.producto_id,
+                        cantidad=item.cantidad,
+                        observaciones=item.observaciones,
+                    )
+                )
+        for producto_id, detalle in existentes.items():
+            if producto_id not in vistos:
+                await session.delete(detalle)
 
     await session.commit()
     return await get_remito(session, remito.id)

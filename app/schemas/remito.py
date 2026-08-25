@@ -20,6 +20,7 @@ class RemitoDetalleRead(BaseModel):
     cantidad: int
     observaciones: str | None
     producto: ProductoRead | None
+    fecha_creacion: datetime
 
     @classmethod
     def from_orm_row(cls, row) -> "RemitoDetalleRead":
@@ -29,6 +30,7 @@ class RemitoDetalleRead(BaseModel):
             cantidad=row.cantidad,
             observaciones=row.observaciones,
             producto=ProductoRead.model_validate(row.producto) if row.producto else None,
+            fecha_creacion=row.fecha_creacion,
         )
 
 

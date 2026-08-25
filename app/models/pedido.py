@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -49,6 +49,10 @@ class PedidoDetalle(Base):
     # generated Remito — see RemitoDetalle generation in pedido_service.
     cantidad_remitida: Mapped[int] = mapped_column(Integer, default=0)
     observaciones: Mapped[str | None] = mapped_column(String(1000), default=None)
+    # Distingue ítems agregados con la creación del pedido de los agregados
+    # después en una edición — preservada por update_pedido, ver
+    # app/services/pedido_service.py.
+    fecha_creacion: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     pedido: Mapped[Pedido] = relationship(back_populates="detalles")
     producto = relationship("Productos", lazy="joined")

@@ -191,3 +191,45 @@ async def test_fecha_carga_now(client, session):
     resp = await client.post("/costos/remitos", json={"tipo": "VENTA", "cliente_id": 10, "detalles": []})
     fecha_carga = datetime.fromisoformat(resp.json()["fecha_carga"].replace("Z", "+00:00"))
     assert fecha_carga >= before
+
+
+async def test_editar_remito_preserva_fecha_creacion_de_items_existentes(client, session):
+    # update_remito hace merge por producto_id en vez de borrar y recrear
+    # todas las filas de detalle, para poder distinguir items agregados al
+    # crear el remito de los agregados despues en una edicion.
+    await _make_cliente(session, 41)
+    p1 = await _make_producto(session, codigo="P41A")
+    p2 = await _make_producto(session, codigo="P41B")
+
+    created = await client.post(
+        "/costos/remitos",
+        json={
+            "tipo": "VENTA",
+            "cliente_id": 41,
+            "vendedor": "Ana",
+            "detalles": [{"producto_id": p1.id, "cantidad": 5}],
+        },
+    )
+    remito = created.json()
+    detalle_id_original = remito["detalles"][0]["id"]
+    fecha_creacion_original = remito["detalles"][0]["fecha_creacion"]
+
+    resp = await client.put(
+        f"/costos/remitos/{remito['id']}",
+        json={
+            "detalles": [
+                {"producto_id": p1.id, "cantidad": 9},
+                {"producto_id": p2.id, "cantidad": 2},
+            ]
+        },
+    )
+    assert resp.status_code == 200
+    detalles = {d["producto_id"]: d for d in resp.json()["detalles"]}
+
+    original = detalles[p1.id]
+    assert original["id"] == detalle_id_original
+    assert original["cantidad"] == 9
+    assert original["fecha_creacion"] == fecha_creacion_original
+
+    nuevo = detalles[p2.id]
+    assert nuevo["id"] != detalle_id_original

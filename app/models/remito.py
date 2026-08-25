@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -51,6 +51,10 @@ class RemitoDetalle(Base):
     producto_id: Mapped[int] = mapped_column(ForeignKey("costos_productos.id"))
     cantidad: Mapped[int] = mapped_column(Integer)
     observaciones: Mapped[str | None] = mapped_column(String(1000), default=None)
+    # Distingue ítems agregados con la creación del remito de los agregados
+    # después en una edición — preservada por update_remito, ver
+    # app/services/remito_service.py.
+    fecha_creacion: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     remito: Mapped[Remito] = relationship(back_populates="detalles")
     producto = relationship("Productos", lazy="joined")
