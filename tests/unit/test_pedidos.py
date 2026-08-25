@@ -106,7 +106,7 @@ async def test_registrar_entrega_parcial(client, session):
     assert resp.json()["detalles"][0]["cantidad_entregada"] == 6
 
 
-async def test_entrega_mayor_a_lo_pedido_es_rechazada(client, session):
+async def test_entrega_mayor_a_lo_pedido_es_permitida(client, session):
     await _make_cliente(session, 6)
     producto = await _make_producto(session)
     pedido = await _create_pedido(client, 6, detalles=[{"producto_id": producto.id, "cantidad_pedida": 10}])
@@ -115,7 +115,8 @@ async def test_entrega_mayor_a_lo_pedido_es_rechazada(client, session):
     resp = await client.patch(
         f"/costos/pedidos/{pedido['id']}/entrega", json={"lineas": [{"detalle_id": detalle_id, "cantidad_entregada": 11}]}
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 200
+    assert resp.json()["detalles"][0]["cantidad_entregada"] == 11
 
 
 async def test_entrega_menor_a_lo_ya_entregado_es_rechazada(client, session):
@@ -261,3 +262,32 @@ async def test_editar_pedido_preserva_fecha_creacion_de_items_existentes(client,
 
     nuevo = detalles[p2.id]
     assert nuevo["id"] != detalle_id_original
+
+
+async def test_editar_pedido_item_nuevo_nace_entregado(client, session):
+    # Un item agregado al editar un pedido ya creado (a diferencia de uno
+    # agregado al crear el pedido) puede nacer ya con cantidad_entregada ==
+    # cantidad_pedida, si el cliente lo envia asi en el payload.
+    await _make_cliente(session, 32)
+    p1 = await _make_producto(session, codigo="P32A")
+
+    pedido = await _create_pedido(client, 32, detalles=[])
+
+    resp = await client.put(
+        f"/costos/pedidos/{pedido['id']}",
+        json={"detalles": [{"producto_id": p1.id, "cantidad_pedida": 4, "cantidad_entregada": 4}]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["detalles"][0]["cantidad_pedida"] == 4
+    assert resp.json()["detalles"][0]["cantidad_entregada"] == 4
+
+
+async def test_crear_pedido_ignora_cantidad_entregada_del_payload(client, session):
+    # create_pedido nunca nace con algo entregado, aunque el cliente lo mande.
+    await _make_cliente(session, 33)
+    p1 = await _make_producto(session, codigo="P33A")
+
+    pedido = await _create_pedido(
+        client, 33, detalles=[{"producto_id": p1.id, "cantidad_pedida": 5, "cantidad_entregada": 5}]
+    )
+    assert pedido["detalles"][0]["cantidad_entregada"] == 0

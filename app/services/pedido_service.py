@@ -114,6 +114,7 @@ async def update_pedido(session: AsyncSession, pedido: Pedido, payload: PedidoUp
                         pedido_id=pedido.id,
                         producto_id=item.producto_id,
                         cantidad_pedida=item.cantidad_pedida,
+                        cantidad_entregada=item.cantidad_entregada,
                         observaciones=item.observaciones,
                     )
                 )
@@ -145,11 +146,8 @@ async def registrar_entrega(session: AsyncSession, pedido: Pedido, payload: Pedi
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"cantidad_entregada cannot decrease for detalle_id {linea.detalle_id}",
             )
-        if linea.cantidad_entregada > detalle.cantidad_pedida:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"cantidad_entregada cannot exceed cantidad_pedida for detalle_id {linea.detalle_id}",
-            )
+        # cantidad_entregada puede superar cantidad_pedida — un pedido puede
+        # entregarse de más respecto a lo originalmente solicitado.
         detalle.cantidad_entregada = linea.cantidad_entregada
 
     await session.commit()

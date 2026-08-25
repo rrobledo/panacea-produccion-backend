@@ -12,6 +12,10 @@ class PedidoDetalleCreate(BaseModel):
     producto_id: int
     cantidad_pedida: int
     observaciones: str | None = None
+    # Solo tenida en cuenta por update_pedido al crear un ítem nuevo durante
+    # una edición — un ítem agregado a un pedido ya creado puede nacer ya
+    # entregado. create_pedido la ignora: nada se entrega al crear el pedido.
+    cantidad_entregada: int = 0
 
 
 class PedidoDetalleRead(BaseModel):
