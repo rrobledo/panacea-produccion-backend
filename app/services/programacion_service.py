@@ -142,10 +142,57 @@ async def get_programacion_columnas(session: AsyncSession, anio: int, mes: int, 
 _FIELD_MAP = {"P": "plan", "E": "prod"}
 
 
+def _coerce_int(value, key: str) -> int | None:
+    # El payload de este endpoint es `list[dict]` sin schema, y el grid del
+    # frontend manda los valores editados como string ('30'). `plan`/`prod`
+    # (y el `id` del producto) son INTEGER: sin esta coerción el string llega
+    # crudo al flush y asyncpg tira DataError recién en el commit, o sea un
+    # 500 opaco en vez de un error de validación.
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{key}' debe ser un número entero, recibido {value!r}"
+        )
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        value = value.strip()
+        if value == "":
+            return None
+    try:
+        numero = float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{key}' debe ser un número entero, recibido {value!r}"
+        ) from None
+    if not numero.is_integer():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{key}' debe ser un número entero, recibido {value!r}"
+        )
+    return int(numero)
+
+
+def _parse_celda(key: str) -> tuple[date, str] | None:
+    # 'YYYYMMDD-P'/'-E' -> (fecha, columna). None para cualquier otra clave:
+    # el frontend puede mandar la fila entera (producto_nombre, venta, etc.),
+    # y esas claves no parsean como celda — antes reventaban con ValueError
+    # (500) al desempaquetar el split o al parsear la fecha.
+    codigo, _, op = key.partition("-")
+    column = _FIELD_MAP.get(op)
+    if column is None:
+        return None
+    try:
+        fecha = datetime.strptime(codigo, "%Y%m%d").date()
+    except ValueError:
+        return None
+    return fecha, column
+
+
 async def update_programacion(session: AsyncSession, data: list[dict]) -> None:
     for item in data:
-        producto_id = item.get("id")
-        producto = await session.get(Productos, producto_id)
+        producto_id = _coerce_int(item.get("id"), "id")
+        producto = await session.get(Productos, producto_id) if producto_id is not None else None
         if producto is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Producto {producto_id} not found")
         if "responsable" in item:
@@ -153,11 +200,10 @@ async def update_programacion(session: AsyncSession, data: list[dict]) -> None:
         for key, value in item.items():
             if key in ("id", "responsable", "planeado"):
                 continue
-            codigo, op = key.split("-")
-            fecha = datetime.strptime(codigo, "%Y%m%d").date()
-            column = _FIELD_MAP.get(op)
-            if column is None:
+            celda = _parse_celda(key)
+            if celda is None:
                 continue
+            fecha, column = celda
             row = (
                 await session.execute(
                     select(Programacion).where(Programacion.producto_id == producto_id, Programacion.fecha == fecha)
@@ -168,7 +214,7 @@ async def update_programacion(session: AsyncSession, data: list[dict]) -> None:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"No programacion row for producto_id={producto_id}, fecha={fecha}",
                 )
-            setattr(row, column, None if value == "" else value)
+            setattr(row, column, _coerce_int(value, key))
     await session.commit()
 
 

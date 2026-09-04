@@ -471,6 +471,103 @@ async def test_post_programacion_updates_day_field_and_responsable(client, sessi
     assert responsable == "Nuevo"
 
 
+async def test_post_programacion_acepta_valores_numericos_como_string(client, session):
+    # El grid del frontend manda las celdas editadas como string ('30').
+    # Antes llegaban crudas al INTEGER de costos_programacion y asyncpg
+    # rompía recién en el commit (DataError -> 500).
+    producto = await _make_producto(session, responsable="Todos")
+    await session.execute(
+        text(
+            "INSERT INTO costos_programacion (responsable, plan, prod, producto_id, fecha) "
+            "VALUES ('Todos', 0, 0, :pid, :fecha)"
+        ),
+        {"pid": producto.id, "fecha": date(2026, 7, 15)},
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/costos/programacion",
+        json=[{"id": str(producto.id), "20260715-P": "30", "20260715-E": "25"}],
+    )
+    assert response.status_code == 204
+
+    plan, prod = (
+        await session.execute(
+            text("SELECT plan, prod FROM costos_programacion WHERE producto_id = :pid"), {"pid": producto.id}
+        )
+    ).one()
+    assert (plan, prod) == (30, 25)
+
+
+async def test_post_programacion_vacio_limpia_la_celda(client, session):
+    producto = await _make_producto(session, responsable="Todos")
+    await session.execute(
+        text(
+            "INSERT INTO costos_programacion (responsable, plan, producto_id, fecha) VALUES ('Todos', 10, :pid, :fecha)"
+        ),
+        {"pid": producto.id, "fecha": date(2026, 7, 15)},
+    )
+    await session.commit()
+
+    response = await client.post("/costos/programacion", json=[{"id": producto.id, "20260715-P": ""}])
+    assert response.status_code == 204
+
+    plan = (
+        await session.execute(
+            text("SELECT plan FROM costos_programacion WHERE producto_id = :pid"), {"pid": producto.id}
+        )
+    ).scalar_one()
+    assert plan is None
+
+
+async def test_post_programacion_valor_no_numerico_es_400(client, session):
+    producto = await _make_producto(session, responsable="Todos")
+    await session.execute(
+        text(
+            "INSERT INTO costos_programacion (responsable, plan, producto_id, fecha) VALUES ('Todos', 10, :pid, :fecha)"
+        ),
+        {"pid": producto.id, "fecha": date(2026, 7, 15)},
+    )
+    await session.commit()
+
+    response = await client.post("/costos/programacion", json=[{"id": producto.id, "20260715-P": "abc"}])
+    assert response.status_code == 400
+
+    plan = (
+        await session.execute(
+            text("SELECT plan FROM costos_programacion WHERE producto_id = :pid"), {"pid": producto.id}
+        )
+    ).scalar_one()
+    assert plan == 10
+
+
+async def test_post_programacion_ignora_claves_que_no_son_celdas(client, session):
+    # La fila que devuelve GET /costos/programacion trae producto_nombre y
+    # venta; si el frontend reenvía la fila entera, esas claves no parsean
+    # como 'YYYYMMDD-P/E' y antes tiraban ValueError (500).
+    producto = await _make_producto(session, responsable="Todos")
+    await session.execute(
+        text(
+            "INSERT INTO costos_programacion (responsable, plan, producto_id, fecha) VALUES ('Todos', 0, :pid, :fecha)"
+        ),
+        {"pid": producto.id, "fecha": date(2026, 7, 15)},
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/costos/programacion",
+        json=[{"id": producto.id, "producto_nombre": "Pan", "venta": 5, "20260715-P": 40}],
+    )
+    assert response.status_code == 204
+
+    plan = (
+        await session.execute(
+            text("SELECT plan FROM costos_programacion WHERE producto_id = :pid"), {"pid": producto.id}
+        )
+    ).scalar_one()
+    assert plan == 40
+
+
 async def test_cron_endpoint_requires_cron_secret(client, session):
     from app.deps import require_cron_secret
     from app.main import app
