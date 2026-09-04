@@ -379,6 +379,7 @@ async def list_productos_fabricados(
     ubicacion_id: int | None = None,
     fecha_desde: date | None = None,
     fecha_hasta: date | None = None,
+    orden_id: int | None = None,
 ) -> list[ProductoFabricado]:
     stmt = select(ProductoFabricado).options(
         selectinload(ProductoFabricado.producto).selectinload(Productos.producto_base),
@@ -386,6 +387,8 @@ async def list_productos_fabricados(
         selectinload(ProductoFabricado.ubicacion_desperdicio),
         selectinload(ProductoFabricado.orden),
     )
+    if orden_id is not None:
+        stmt = stmt.where(ProductoFabricado.orden_id == orden_id)
     if producto_id is not None:
         stmt = stmt.where(ProductoFabricado.producto_id == producto_id)
     if ubicacion_id is not None:

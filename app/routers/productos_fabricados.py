@@ -16,9 +16,15 @@ async def list_productos_fabricados(
     ubicacion_id: int | None = None,
     fecha_desde: date | None = None,
     fecha_hasta: date | None = None,
+    orden_id: int | None = None,
     session: AsyncSession = Depends(get_session),
 ):
     rows = await service.list_productos_fabricados(
-        session, producto_id=producto_id, ubicacion_id=ubicacion_id, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta
+        session,
+        producto_id=producto_id,
+        ubicacion_id=ubicacion_id,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        orden_id=orden_id,
     )
     return [ProductoFabricadoRead.from_orm_row(r) for r in rows]
