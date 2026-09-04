@@ -8,6 +8,7 @@ from app.schemas.ordenes_produccion import (
     FinalizarOrdenRequest,
     GenerarOrdenesRequest,
     OrdenProduccionRead,
+    OrdenProduccionUpdate,
     PreviewOrdenesResponse,
 )
 from app.services import ordenes_produccion_service as service
@@ -51,6 +52,15 @@ async def generar_ordenes(payload: GenerarOrdenesRequest, session: AsyncSession 
 @router.get("/{orden_id}", response_model=OrdenProduccionRead)
 async def get_orden(orden_id: int, session: AsyncSession = Depends(get_session)):
     orden = await service.get_orden(session, orden_id)
+    return OrdenProduccionRead.from_orm_row(orden)
+
+
+@router.patch("/{orden_id}", response_model=OrdenProduccionRead)
+async def actualizar_orden(
+    orden_id: int, payload: OrdenProduccionUpdate, session: AsyncSession = Depends(get_session)
+):
+    orden = await service.get_orden(session, orden_id)
+    orden = await service.actualizar_responsable(session, orden, payload.responsable)
     return OrdenProduccionRead.from_orm_row(orden)
 
 

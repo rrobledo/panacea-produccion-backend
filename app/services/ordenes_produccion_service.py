@@ -349,6 +349,28 @@ async def generar_ordenes(
     return [await get_orden(session, orden.id) for orden in ordenes_creadas]
 
 
+# El Responsable es a quién se le asigna el trabajo, así que solo tiene sentido
+# cambiarlo mientras la orden sigue viva. En FINALIZADA o CANCELADA es parte del
+# registro de lo que pasó y reescribirlo falsearía el histórico.
+ESTADOS_REASIGNABLES = ("ASIGNADA", "EN_PRODUCCION")
+
+
+async def actualizar_responsable(
+    session: AsyncSession, orden: OrdenProduccion, responsable: str
+) -> OrdenProduccion:
+    if orden.estado not in ESTADOS_REASIGNABLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"No se puede cambiar el responsable de una orden en estado '{orden.estado}': "
+                f"solo se puede en {' o '.join(ESTADOS_REASIGNABLES)}."
+            ),
+        )
+    orden.responsable = responsable.strip()
+    await session.commit()
+    return await get_orden(session, orden.id)
+
+
 ESTADOS_BORRABLES = ("ASIGNADA", "CANCELADA")
 
 

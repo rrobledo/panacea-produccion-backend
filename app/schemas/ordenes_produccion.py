@@ -70,6 +70,12 @@ class OrdenProduccionRead(BaseModel):
         )
 
 
+class OrdenProduccionUpdate(BaseModel):
+    """Cambio del Responsable/Área asignado a una orden."""
+
+    responsable: str = Field(min_length=1, max_length=50)
+
+
 class CantidadOverride(BaseModel):
     """Cantidad corregida por el usuario en la vista previa.
 

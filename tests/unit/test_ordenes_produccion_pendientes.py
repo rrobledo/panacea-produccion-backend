@@ -288,3 +288,87 @@ async def test_borrar_una_orden_no_toca_las_reservas_de_otra(client, session):
     restantes = (await session.execute(select(StockMovimiento))).scalars().all()
     assert len(restantes) == 1
     assert restantes[0].referencia == next(o for o in ordenes if o["responsable"] == "Pasteleria")["codigo"]
+
+
+# ── Cambiar el responsable ───────────────────────────────────────────────────
+
+async def test_cambiar_responsable_de_una_orden_asignada(client, session):
+    harina = await _insumo(session)
+    pan = await _producto(session, "R1", "Pan")
+    await _receta(session, pan, harina)
+    await _programar(session, pan, 100, "Panaderia")
+
+    orden = (await _generar(client))[0]
+    assert orden["responsable"] == "Panaderia"
+
+    respuesta = await client.patch(
+        f"/costos/ordenes-produccion/{orden['id']}", json={"responsable": "Pasteleria"}
+    )
+    assert respuesta.status_code == 200
+    assert respuesta.json()["responsable"] == "Pasteleria"
+
+    de_nuevo = await client.get(f"/costos/ordenes-produccion/{orden['id']}")
+    assert de_nuevo.json()["responsable"] == "Pasteleria"
+
+
+async def test_cambiar_responsable_en_produccion(client, session):
+    harina = await _insumo(session)
+    pan = await _producto(session, "R2", "Pan")
+    await _receta(session, pan, harina)
+    await _programar(session, pan, 100, "Panaderia")
+
+    orden = (await _generar(client))[0]
+    await client.post(f"/costos/ordenes-produccion/{orden['id']}/iniciar")
+
+    respuesta = await client.patch(
+        f"/costos/ordenes-produccion/{orden['id']}", json={"responsable": "Galletas"}
+    )
+    assert respuesta.status_code == 200
+    assert respuesta.json()["responsable"] == "Galletas"
+
+
+async def test_no_se_puede_cambiar_el_responsable_de_una_cancelada(client, session):
+    harina = await _insumo(session)
+    pan = await _producto(session, "R3", "Pan")
+    await _receta(session, pan, harina)
+    await _programar(session, pan, 100, "Panaderia")
+
+    orden = (await _generar(client))[0]
+    await client.post(f"/costos/ordenes-produccion/{orden['id']}/cancelar")
+
+    respuesta = await client.patch(
+        f"/costos/ordenes-produccion/{orden['id']}", json={"responsable": "Pastas"}
+    )
+    assert respuesta.status_code == 422
+    assert (await client.get(f"/costos/ordenes-produccion/{orden['id']}")).json()["responsable"] == "Panaderia"
+
+
+async def test_no_se_puede_cambiar_el_responsable_de_una_finalizada(client, session):
+    harina = await _insumo(session)
+    pan = await _producto(session, "R4", "Pan")
+    await _receta(session, pan, harina)
+    await _programar(session, pan, 100, "Panaderia")
+
+    orden = (await _generar(client))[0]
+    await client.post(f"/costos/ordenes-produccion/{orden['id']}/iniciar")
+    ubicacion = (await client.post("/costos/ubicaciones", json={"nombre": "Depósito"})).json()
+    await client.post(
+        f"/costos/ordenes-produccion/{orden['id']}/finalizar",
+        json={"lineas": [{"producto_id": pan.id, "cantidad_fabricada": 100, "ubicacion_id": ubicacion["id"]}]},
+    )
+
+    respuesta = await client.patch(
+        f"/costos/ordenes-produccion/{orden['id']}", json={"responsable": "Pastas"}
+    )
+    assert respuesta.status_code == 422
+
+
+async def test_responsable_vacio_es_rechazado(client, session):
+    harina = await _insumo(session)
+    pan = await _producto(session, "R5", "Pan")
+    await _receta(session, pan, harina)
+    await _programar(session, pan, 100, "Panaderia")
+
+    orden = (await _generar(client))[0]
+    respuesta = await client.patch(f"/costos/ordenes-produccion/{orden['id']}", json={"responsable": ""})
+    assert respuesta.status_code in (400, 422)
