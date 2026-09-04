@@ -102,15 +102,21 @@ async def test_generar_ordenes_separates_by_responsable_even_with_same_base(clie
     assert responsables == ["Pastas", "Pasteleria"]
 
 
-async def test_generar_ordenes_twice_same_date_is_rejected(client, session):
+async def test_generar_ordenes_twice_same_date_no_duplica_lo_ya_generado(client, session):
+    """Generar de nuevo un día ya generado no falla ni duplica: no queda nada pendiente."""
     producto = await _make_producto(session, codigo="P9", nombre="Solo", lote_produccion=100)
     await _make_programacion(session, producto, FECHA, plan=10)
 
     first = await client.post("/costos/ordenes-produccion/generar", json={"fecha": FECHA.isoformat()})
     assert first.status_code == 201
+    assert len(first.json()) == 1
 
     second = await client.post("/costos/ordenes-produccion/generar", json={"fecha": FECHA.isoformat()})
-    assert second.status_code == 422
+    assert second.status_code == 201
+    assert second.json() == []
+
+    todas = await client.get("/costos/ordenes-produccion", params={"fecha_fabricacion": FECHA.isoformat()})
+    assert len(todas.json()) == 1
 
 
 async def test_full_lifecycle_iniciar_and_finalizar(client, session):

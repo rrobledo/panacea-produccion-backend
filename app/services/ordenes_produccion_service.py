@@ -1,14 +1,16 @@
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.insumos import Insumos
+from app.models.stock_movimiento import StockMovimiento
 from app.models.ordenes_produccion import (
     OrdenProduccion,
     OrdenProduccionInsumoLinea,
@@ -116,15 +118,60 @@ class OrdenPreview:
     insumos: list[LineaInsumoPreview] = field(default_factory=list)
 
 
-async def validar_fecha_sin_ordenes(session: AsyncSession, fecha: date) -> None:
-    existing = await session.execute(
-        select(OrdenProduccion.id).where(OrdenProduccion.fecha_fabricacion == fecha).limit(1)
+_CODIGO_RE = re.compile(r"^\d{6}-(\d+)$")
+
+
+async def _proximo_indice_codigo(session: AsyncSession, fecha: date) -> int:
+    """Siguiente número de orden para esa fecha.
+
+    La numeración NO reinicia: al poder completar un día ya generado, volver a
+    empezar en 01 produciría códigos repetidos — y con el índice único de
+    `codigo` eso ahora falla en el acto en vez de pasar inadvertido. Se cuentan
+    todas las órdenes del día, canceladas incluidas: un código no se reutiliza
+    aunque su orden ya no sirva. Un código con formato inesperado se ignora en
+    lugar de romper la generación (design.md Decision 3).
+    """
+    result = await session.execute(
+        select(OrdenProduccion.codigo).where(OrdenProduccion.fecha_fabricacion == fecha)
     )
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Ya existen órdenes de producción generadas para {fecha.isoformat()}",
+    maximo = 0
+    for (codigo,) in result.all():
+        match = _CODIGO_RE.match(codigo or "")
+        if match:
+            maximo = max(maximo, int(match.group(1)))
+    return maximo + 1
+
+
+# Estados cuya orden "cubre" a sus productos para esa fecha. CANCELADA queda
+# afuera a propósito: cancelar equivale a "esto no se hizo", así que sus
+# productos vuelven a estar pendientes (design.md Decision 1).
+ESTADOS_QUE_CUBREN = ("ASIGNADA", "EN_PRODUCCION", "FINALIZADA")
+
+
+async def productos_cubiertos(session: AsyncSession, fecha: date) -> set[int]:
+    """producto_id ya cubiertos por órdenes vivas de esa fecha.
+
+    Se compara por producto y no por fila de Programación porque la línea de
+    orden guarda `producto_id` y no la fila de la que salió; emparejar por fila
+    exigiría una migración que no puede reconstruir el dato para las órdenes ya
+    existentes (design.md Decision 1 y Risks).
+    """
+    result = await session.execute(
+        select(OrdenProduccionProductoLinea.producto_id)
+        .join(OrdenProduccion, OrdenProduccion.id == OrdenProduccionProductoLinea.orden_id)
+        .where(
+            OrdenProduccion.fecha_fabricacion == fecha,
+            OrdenProduccion.estado.in_(ESTADOS_QUE_CUBREN),
         )
+    )
+    return {producto_id for (producto_id,) in result.all()}
+
+
+async def contar_ordenes_de_fecha(session: AsyncSession, fecha: date) -> int:
+    result = await session.execute(
+        select(func.count()).select_from(OrdenProduccion).where(OrdenProduccion.fecha_fabricacion == fecha)
+    )
+    return int(result.scalar_one())
 
 
 async def calcular_ordenes(
@@ -141,6 +188,10 @@ async def calcular_ordenes(
     producto puede aparecer en más de una fila del mismo grupo (Decision 3).
     Una cantidad en 0 excluye la línea, y un grupo que queda sin líneas no
     genera orden (Decision 7).
+
+    Solo se consideran los productos **pendientes**: los que todavía no están
+    en ninguna orden viva de esa fecha. Así una fecha ya generada no se
+    rechaza, sino que ofrece lo que falta.
     """
     overrides = overrides or {}
 
@@ -150,6 +201,11 @@ async def calcular_ordenes(
         )
     )
     filas = list(prog_result.scalars().all())
+    if not filas:
+        return []
+
+    cubiertos = await productos_cubiertos(session, fecha)
+    filas = [f for f in filas if f.producto_id not in cubiertos]
     if not filas:
         return []
 
@@ -243,16 +299,14 @@ async def calcular_ordenes(
 
 async def preview_ordenes(
     session: AsyncSession, fecha: date, overrides: dict[int, int] | None = None
-) -> list[OrdenPreview]:
-    await validar_fecha_sin_ordenes(session, fecha)
-    return await calcular_ordenes(session, fecha, overrides)
+) -> tuple[list[OrdenPreview], int]:
+    previews = await calcular_ordenes(session, fecha, overrides)
+    return previews, await contar_ordenes_de_fecha(session, fecha)
 
 
 async def generar_ordenes(
     session: AsyncSession, fecha: date, overrides: dict[int, int] | None = None
 ) -> list[OrdenProduccion]:
-    await validar_fecha_sin_ordenes(session, fecha)
-
     previews = await calcular_ordenes(session, fecha, overrides)
     if not previews:
         return []
@@ -260,9 +314,10 @@ async def generar_ordenes(
     hoy = datetime.now(timezone.utc)
     ordenes_creadas: list[OrdenProduccion] = []
     codigo_prefix = fecha.strftime("%y%m%d")
+    primer_indice = await _proximo_indice_codigo(session, fecha)
 
-    for idx, preview in enumerate(previews, start=1):
-        codigo = f"{codigo_prefix}-{idx:02d}"
+    for offset, preview in enumerate(previews):
+        codigo = f"{codigo_prefix}-{primer_indice + offset:02d}"
         orden = OrdenProduccion(
             codigo=codigo,
             fecha_fabricacion=fecha,
@@ -292,6 +347,41 @@ async def generar_ordenes(
 
     await session.commit()
     return [await get_orden(session, orden.id) for orden in ordenes_creadas]
+
+
+ESTADOS_BORRABLES = ("ASIGNADA", "CANCELADA")
+
+
+async def eliminar_orden(session: AsyncSession, orden: OrdenProduccion) -> None:
+    """Borra una orden que nunca llegó a producirse, con sus reservas.
+
+    Solo `ASIGNADA` y `CANCELADA`: una `EN_PRODUCCION` ya consumió insumos y
+    borrarla dejaría un CONSUMO sin orden que lo explique, y una `FINALIZADA`
+    tiene ProductoFabricado apuntándola con un FK sin cascade, así que el
+    borrado fallaría con un error de base opaco (design.md Decision 4).
+
+    Las líneas de producto e insumo se van solas por el ON DELETE CASCADE. Los
+    movimientos de RESERVA no tienen FK — referencian el código — así que se
+    borran acá, en la misma transacción. Es seguro porque una orden borrable
+    nunca tuvo CONSUMO, y el índice único de `codigo` garantiza que la
+    referencia identifique una sola orden (Decision 5).
+    """
+    if orden.estado not in ESTADOS_BORRABLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"No se puede borrar una orden en estado '{orden.estado}': solo se pueden borrar "
+                f"las órdenes en {' o '.join(ESTADOS_BORRABLES)}."
+            ),
+        )
+
+    await session.execute(
+        delete(StockMovimiento).where(
+            StockMovimiento.tipo == "RESERVA", StockMovimiento.referencia == orden.codigo
+        )
+    )
+    await session.delete(orden)
+    await session.commit()
 
 
 async def iniciar_produccion(session: AsyncSession, orden: OrdenProduccion) -> OrdenProduccion:

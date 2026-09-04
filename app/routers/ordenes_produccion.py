@@ -7,8 +7,8 @@ from app.deps import get_session
 from app.schemas.ordenes_produccion import (
     FinalizarOrdenRequest,
     GenerarOrdenesRequest,
-    OrdenPreviewRead,
     OrdenProduccionRead,
+    PreviewOrdenesResponse,
 )
 from app.services import ordenes_produccion_service as service
 
@@ -35,10 +35,11 @@ def _overrides(payload: GenerarOrdenesRequest) -> dict[int, int] | None:
     return {c.programacion_id: c.cantidad for c in payload.cantidades}
 
 
-@router.post("/preview", response_model=list[OrdenPreviewRead])
+@router.post("/preview", response_model=PreviewOrdenesResponse)
 async def preview_ordenes(payload: GenerarOrdenesRequest, session: AsyncSession = Depends(get_session)):
-    """Calcula las órdenes que se generarían para esa fecha, sin persistir nada."""
-    return await service.preview_ordenes(session, payload.fecha, _overrides(payload))
+    """Calcula las órdenes pendientes de esa fecha, sin persistir nada."""
+    ordenes, existentes = await service.preview_ordenes(session, payload.fecha, _overrides(payload))
+    return {"ordenes": ordenes, "ordenes_existentes": existentes}
 
 
 @router.post("/generar", response_model=list[OrdenProduccionRead], status_code=status.HTTP_201_CREATED)
@@ -51,6 +52,12 @@ async def generar_ordenes(payload: GenerarOrdenesRequest, session: AsyncSession 
 async def get_orden(orden_id: int, session: AsyncSession = Depends(get_session)):
     orden = await service.get_orden(session, orden_id)
     return OrdenProduccionRead.from_orm_row(orden)
+
+
+@router.delete("/{orden_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def eliminar_orden(orden_id: int, session: AsyncSession = Depends(get_session)):
+    orden = await service.get_orden(session, orden_id)
+    await service.eliminar_orden(session, orden)
 
 
 @router.post("/{orden_id}/iniciar", response_model=OrdenProduccionRead)

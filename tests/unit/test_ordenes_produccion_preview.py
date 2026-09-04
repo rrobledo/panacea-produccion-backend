@@ -65,7 +65,7 @@ async def test_preview_does_not_persist_anything(client, session):
 
     response = await client.post("/costos/ordenes-produccion/preview", json={"fecha": FECHA.isoformat()})
     assert response.status_code == 200
-    assert len(response.json()) == 1
+    assert len(response.json()["ordenes"]) == 1
 
     assert await _count(session, OrdenProduccion) == 0
     assert await _count(session, OrdenProduccionProductoLinea) == 0
@@ -78,7 +78,7 @@ async def test_preview_exposes_lote_and_totals(client, session):
     await _make_costo(session, producto, harina, cantidad=50)
     fila = await _make_programacion(session, producto, FECHA, plan=100)
 
-    orden = (await client.post("/costos/ordenes-produccion/preview", json={"fecha": FECHA.isoformat()})).json()[0]
+    orden = (await client.post("/costos/ordenes-produccion/preview", json={"fecha": FECHA.isoformat()})).json()["ordenes"][0]
 
     assert orden["lote_produccion"] == 250
     assert orden["cantidad_total"] == 100          # por debajo del lote: el front lo marca en rojo
@@ -92,21 +92,24 @@ async def test_preview_exposes_lote_and_totals(client, session):
     assert orden["insumos"][0]["insumo_unidad_medida"] == "KG"
 
 
-async def test_preview_rejects_date_that_already_has_ordenes(client, session):
+async def test_preview_de_fecha_ya_generada_no_falla_y_reporta_las_existentes(client, session):
     producto = await _make_producto(session, codigo="PV3", nombre="Pan3")
     await _make_programacion(session, producto, FECHA, plan=10)
 
     assert (await client.post("/costos/ordenes-produccion/generar", json={"fecha": FECHA.isoformat()})).status_code == 201
 
     response = await client.post("/costos/ordenes-produccion/preview", json={"fecha": FECHA.isoformat()})
-    assert response.status_code == 422
-    assert "ya existen" in response.json()["detail"].lower()
+    assert response.status_code == 200
+    cuerpo = response.json()
+    assert cuerpo["ordenes"] == []           # nada pendiente
+    assert cuerpo["ordenes_existentes"] == 1  # pero la fecha ya tiene una
 
 
 async def test_preview_empty_when_nothing_programmed(client, session):
     response = await client.post("/costos/ordenes-produccion/preview", json={"fecha": FECHA.isoformat()})
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json()["ordenes"] == []
+    assert response.json()["ordenes_existentes"] == 0
 
 
 # ── Preview y generación coinciden ───────────────────────────────────────────
@@ -124,7 +127,7 @@ async def test_preview_and_generar_produce_identical_quantities(client, session)
 
     preview = (await client.post(
         "/costos/ordenes-produccion/preview", json={"fecha": FECHA.isoformat(), **overrides}
-    )).json()[0]
+    )).json()["ordenes"][0]
     generada = (await client.post(
         "/costos/ordenes-produccion/generar", json={"fecha": FECHA.isoformat(), **overrides}
     )).json()[0]

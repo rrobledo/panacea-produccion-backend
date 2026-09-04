@@ -10,7 +10,7 @@ class OrdenProduccion(Base):
     __tablename__ = "ordenes_produccion"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    codigo: Mapped[str] = mapped_column(String(50))
+    codigo: Mapped[str] = mapped_column(String(50), unique=True)
     fecha_fabricacion: Mapped[date] = mapped_column(Date)
     responsable: Mapped[str] = mapped_column(String(50))
     estado: Mapped[str] = mapped_column(String(20), default="ASIGNADA")

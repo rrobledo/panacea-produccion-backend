@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.productos import ProductoRead
 from app.schemas.ubicacion import UbicacionRead
@@ -88,6 +88,8 @@ class GenerarOrdenesRequest(BaseModel):
 
 
 class LineaProductoPreviewRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     programacion_id: int
     producto_id: int
     producto_nombre: str
@@ -96,13 +98,29 @@ class LineaProductoPreviewRead(BaseModel):
 
 
 class LineaInsumoPreviewRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     insumo_id: int
     insumo_nombre: str
     insumo_unidad_medida: str
     cantidad: int
 
 
+class PreviewOrdenesResponse(BaseModel):
+    """Además de las órdenes a generar, cuántas ya existen para esa fecha.
+
+    El preview ya no rechaza una fecha generada: ofrece lo pendiente. El conteo
+    le permite al frontend distinguir "no hay nada programado" de "ya está todo
+    generado", que si no se verían igual.
+    """
+
+    ordenes: list["OrdenPreviewRead"]
+    ordenes_existentes: int
+
+
 class OrdenPreviewRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     responsable: str
     producto_base_id: int
     producto_base_nombre: str
@@ -164,3 +182,6 @@ class ProductoFabricadoRead(BaseModel):
             motivo_desperdicio=row.motivo_desperdicio,
             fecha=row.fecha,
         )
+
+
+PreviewOrdenesResponse.model_rebuild()
