@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.pedido import Pedido, PedidoDetalle
+from app.models.productos import Productos
 from app.models.remito import Remito, RemitoDetalle
 from app.models.sucursal import Sucursal
 from app.schemas.pedido import PedidoCreate, PedidoEntregaRequest, PedidoUpdate
@@ -18,7 +19,13 @@ _REMITO_GENERATING_ESTADOS = {"LISTO_PARA_ENTREGA", "ENTREGADO"}
 
 
 def _pedido_stmt():
-    return select(Pedido).options(selectinload(Pedido.detalles).selectinload(PedidoDetalle.producto))
+    # Explicit chain down to producto_base — ProductoRead serializes it, and
+    # Productos.producto_base's own default lazy strategy doesn't reliably
+    # fire once Productos is reached via another relationship's selectinload
+    # chain in this async setup.
+    return select(Pedido).options(
+        selectinload(Pedido.detalles).selectinload(PedidoDetalle.producto).selectinload(Productos.producto_base)
+    )
 
 
 def _add_detalle_rows(session: AsyncSession, pedido_id: int, detalles) -> None:

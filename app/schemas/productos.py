@@ -15,16 +15,27 @@ class ProductoBase(BaseModel):
     is_producto: bool = True
     habilitado: bool = True
     prioridad: int = 10
+    producto_base_id: int | None = None
 
 
 class ProductoCreate(ProductoBase):
     pass
 
 
+class ProductoBaseRef(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    codigo: str
+    nombre: str
+    lote_produccion: int
+
+
 class ProductoRead(ProductoBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    producto_base: ProductoBaseRef | None = None
 
 
 class CostoCreate(BaseModel):

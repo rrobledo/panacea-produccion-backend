@@ -101,3 +101,19 @@ REMITO_ESTADO_TIMESTAMP_FIELD: dict[str, str] = {
     "EN_TRANSITO": "fecha_despacho",
     "RECIBIDO": "fecha_recibido",
 }
+
+StockMovimientoTipo = Literal["RESERVA", "CONSUMO", "AJUSTE"]
+
+OrdenProduccionEstado = Literal["ASIGNADA", "EN_PRODUCCION", "FINALIZADA", "CANCELADA"]
+# Secuencia lineal ASIGNADA -> EN_PRODUCCION -> FINALIZADA; CANCELADA es una
+# transición lateral solo permitida desde ASIGNADA (ver
+# openspec/changes/ordenes-produccion-stock/design.md Decision 2).
+ORDEN_PRODUCCION_VALID_TRANSITIONS: dict[str, str] = {
+    "ASIGNADA": "EN_PRODUCCION",
+    "EN_PRODUCCION": "FINALIZADA",
+}
+ORDEN_PRODUCCION_ESTADO_TIMESTAMP_FIELD: dict[str, str] = {
+    "EN_PRODUCCION": "fecha_en_produccion",
+    "FINALIZADA": "fecha_finalizada",
+    "CANCELADA": "fecha_cancelada",
+}

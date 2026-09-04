@@ -193,6 +193,30 @@ async def test_fecha_carga_now(client, session):
     assert fecha_carga >= before
 
 
+async def test_remito_get_with_producto_that_has_producto_base_does_not_500(client, session):
+    # Regression: see equivalent test in test_pedidos.py — same nested
+    # selectinload chain, same fix (RemitoDetalle.producto -> producto_base).
+    await _make_cliente(session, 40)
+    masa = await _make_producto(session, codigo="MASA2", nombre="Masa", is_producto=False)
+    final = await _make_producto(session, codigo="FIN2", nombre="Medialuna", producto_base_id=masa.id)
+
+    created = await client.post(
+        "/costos/remitos",
+        json={
+            "tipo": "VENTA",
+            "cliente_id": 40,
+            "vendedor": "Ana",
+            "detalles": [{"producto_id": final.id, "cantidad": 5}],
+        },
+    )
+    remito_id = created.json()["id"]
+
+    resp = await client.get(f"/costos/remitos/{remito_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["detalles"][0]["producto"]["producto_base"]["id"] == masa.id
+
+
 async def test_editar_remito_preserva_fecha_creacion_de_items_existentes(client, session):
     # update_remito hace merge por producto_id en vez de borrar y recrear
     # todas las filas de detalle, para poder distinguir items agregados al

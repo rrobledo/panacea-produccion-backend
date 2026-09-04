@@ -231,6 +231,24 @@ async def test_pedido_cliente_con_sucursal_es_rechazado(client, session):
     assert resp.status_code == 400
 
 
+async def test_pedido_get_with_producto_that_has_producto_base_does_not_500(client, session):
+    # Regression: Productos.producto_base is a self-referential relationship
+    # serialized via ProductoRead (ordenes-produccion-stock). Reached only
+    # through PedidoDetalle.producto's own selectinload chain, its default
+    # lazy strategy doesn't reliably fire in this async setup unless the
+    # query explicitly chains .selectinload(Productos.producto_base) too.
+    await _make_cliente(session, 30)
+    masa = await _make_producto(session, codigo="MASA", nombre="Masa", is_producto=False)
+    final = await _make_producto(session, codigo="FIN", nombre="Medialuna", producto_base_id=masa.id)
+
+    created = await _create_pedido(client, 30, detalles=[{"producto_id": final.id, "cantidad_pedida": 5}])
+
+    resp = await client.get(f"/costos/pedidos/{created['id']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["detalles"][0]["producto"]["producto_base"]["id"] == masa.id
+
+
 async def test_editar_pedido_preserva_fecha_creacion_de_items_existentes(client, session):
     # update_pedido hace merge por producto_id en vez de borrar y recrear
     # todas las filas de detalle, para poder distinguir items agregados al

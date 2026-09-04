@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.deps import get_session
 from app.models.pedido import Pedido, PedidoDetalle
+from app.models.productos import Productos
 from app.schemas.pedido import PedidoRead
 from app.schemas.pedido_reportes import (
     PedidosPendientesPorDia,
@@ -34,7 +35,9 @@ _ESTADO_COUNT_FIELD = {
 
 
 def _pedidos_stmt():
-    return select(Pedido).options(selectinload(Pedido.detalles).selectinload(PedidoDetalle.producto))
+    return select(Pedido).options(
+        selectinload(Pedido.detalles).selectinload(PedidoDetalle.producto).selectinload(Productos.producto_base)
+    )
 
 
 @router.get("/pendientes-entrega", response_model=list[PedidoRead])

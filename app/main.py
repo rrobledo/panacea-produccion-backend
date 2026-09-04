@@ -27,17 +27,20 @@ from app.routers import (
     libro_iva,
     misc,
     ordenes_compra,
+    ordenes_produccion,
     pagos,
     pedidos,
     pedidos_reportes,
     planning,
     produccion_stats,
     productos,
+    productos_fabricados,
     profile,
     programacion,
     proveedores,
     remitos,
     sucursales,
+    ubicaciones,
     ventas,
 )
 
@@ -104,6 +107,9 @@ app.include_router(sucursales.router, prefix="/costos")
 app.include_router(produccion_stats.router, prefix="/costos")
 app.include_router(ventas.router, prefix="/costos")
 app.include_router(planning.router, prefix="/costos")
+app.include_router(ubicaciones.router, prefix="/costos")
+app.include_router(ordenes_produccion.router, prefix="/costos")
+app.include_router(productos_fabricados.router, prefix="/costos")
 app.include_router(programacion.router, prefix="/costos")
 app.include_router(cron.router)
 app.include_router(auth_router)

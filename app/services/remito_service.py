@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.productos import Productos
 from app.models.remito import Remito, RemitoDetalle
 from app.schemas.remito import RemitoCreate, RemitoUpdate
 from app.schemas.vocab import REMITO_ESTADO_TIMESTAMP_FIELD, REMITO_VALID_TRANSITIONS
@@ -12,7 +13,11 @@ from app.schemas.vocab import REMITO_ESTADO_TIMESTAMP_FIELD, REMITO_VALID_TRANSI
 
 def _remito_stmt():
     return select(Remito).options(
-        selectinload(Remito.detalles).selectinload(RemitoDetalle.producto),
+        # Explicit chain down to producto_base — ProductoRead serializes it,
+        # and Productos.producto_base's own default lazy strategy doesn't
+        # reliably fire once Productos is reached via another relationship's
+        # selectinload chain in this async setup.
+        selectinload(Remito.detalles).selectinload(RemitoDetalle.producto).selectinload(Productos.producto_base),
         selectinload(Remito.origen_sucursal),
         selectinload(Remito.destino_sucursal),
     )

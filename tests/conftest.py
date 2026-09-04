@@ -18,6 +18,12 @@ TEST_DATABASE_URL = os.environ.get(
 
 TRUNCATE_TABLES = [
     "users",
+    "productos_fabricados",
+    "ordenes_produccion_insumo_linea",
+    "ordenes_produccion_producto_linea",
+    "ordenes_produccion",
+    "stock_movimientos",
+    "ubicaciones_ubicacion",
     "crm_auditoria",
     "crm_club_socio_cache",
     "crm_actividad",

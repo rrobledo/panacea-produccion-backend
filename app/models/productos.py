@@ -21,6 +21,20 @@ class Productos(Base):
     is_producto: Mapped[bool] = mapped_column(Boolean, default=True)
     habilitado: Mapped[bool] = mapped_column(Boolean, default=True)
     prioridad: Mapped[int] = mapped_column(Integer, default=10)
+    # Self-referencial: producto intermedio (is_producto=False) del que este
+    # producto se arma. Ver openspec/changes/ordenes-produccion-stock/design.md
+    # Decision 1 — no hay entidad "Masa" separada.
+    producto_base_id: Mapped[int | None] = mapped_column(ForeignKey("costos_productos.id"), default=None)
+
+    # selectin (not joined): joined doesn't reliably eager-load through a
+    # self-referential FK once Productos itself is reached via another
+    # relationship's selectinload chain (e.g. OrdenProduccionProductoLinea.producto)
+    # — selectin issues its own follow-up SELECT regardless of how the
+    # parent was loaded, so it works uniformly everywhere ProductoRead is
+    # serialized.
+    producto_base: Mapped["Productos | None"] = relationship(
+        "Productos", remote_side="Productos.id", foreign_keys=[producto_base_id], lazy="selectin"
+    )
 
 
 class ProductosRef(Base):
