@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.productos import ProductoRead
 from app.schemas.ubicacion import UbicacionRead
@@ -70,8 +70,46 @@ class OrdenProduccionRead(BaseModel):
         )
 
 
+class CantidadOverride(BaseModel):
+    """Cantidad corregida por el usuario en la vista previa.
+
+    Se indexa por `programacion_id` y no por `producto_id`: un mismo producto
+    puede tener más de una fila de Programación en el mismo grupo, así que el
+    producto no identifica una línea de forma única (design.md Decision 3).
+    """
+
+    programacion_id: int
+    cantidad: int = Field(ge=0)
+
+
 class GenerarOrdenesRequest(BaseModel):
     fecha: date
+    cantidades: list[CantidadOverride] | None = None
+
+
+class LineaProductoPreviewRead(BaseModel):
+    programacion_id: int
+    producto_id: int
+    producto_nombre: str
+    cantidad_programada: int
+    cantidad_planeada: int
+
+
+class LineaInsumoPreviewRead(BaseModel):
+    insumo_id: int
+    insumo_nombre: str
+    insumo_unidad_medida: str
+    cantidad: int
+
+
+class OrdenPreviewRead(BaseModel):
+    responsable: str
+    producto_base_id: int
+    producto_base_nombre: str
+    lote_produccion: int
+    cantidad_total: int
+    productos: list[LineaProductoPreviewRead]
+    insumos: list[LineaInsumoPreviewRead]
 
 
 class FinalizarLineaRequest(BaseModel):

@@ -1,11 +1,14 @@
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
+from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.insumos import Insumos
 from app.models.ordenes_produccion import (
     OrdenProduccion,
     OrdenProduccionInsumoLinea,
@@ -61,12 +64,59 @@ async def get_orden(session: AsyncSession, orden_id: int) -> OrdenProduccion:
     return row
 
 
+def _redondear_insumo(cantidad: float) -> int:
+    """Redondea la cantidad de un insumo a unidades enteras (half-up).
+
+    Producción no maneja fracciones, así que la cantidad se guarda y se
+    muestra entera. Dos detalles importantes (ver design.md Decision 4):
+
+    - Se usa Decimal con ROUND_HALF_UP y no el `round()` de Python, que
+      aplica banker's rounding: `round(2.5)` da 2, no 3.
+    - Un requerimiento mayor que cero nunca baja a cero. Sin ese piso, un
+      insumo de 0.4 KG redondearía a 0 y el generador lo descartaría
+      (`if cantidad <= 0: continue`), dejándolo fuera de la orden y sin
+      reservar ni consumir: un faltante de stock silencioso.
+    """
+    if cantidad <= 0:
+        return 0
+    redondeada = int(Decimal(str(cantidad)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    return max(1, redondeada)
+
+
 async def _get_costos(session: AsyncSession, producto_id: int) -> list[Costos]:
     result = await session.execute(select(Costos).where(Costos.producto_id == producto_id))
     return list(result.scalars().all())
 
 
-async def generar_ordenes(session: AsyncSession, fecha: date) -> list[OrdenProduccion]:
+@dataclass
+class LineaProductoPreview:
+    programacion_id: int
+    producto_id: int
+    producto_nombre: str
+    cantidad_programada: int
+    cantidad_planeada: int
+
+
+@dataclass
+class LineaInsumoPreview:
+    insumo_id: int
+    insumo_nombre: str
+    insumo_unidad_medida: str
+    cantidad: int
+
+
+@dataclass
+class OrdenPreview:
+    responsable: str
+    producto_base_id: int
+    producto_base_nombre: str
+    lote_produccion: int
+    cantidad_total: int
+    productos: list[LineaProductoPreview] = field(default_factory=list)
+    insumos: list[LineaInsumoPreview] = field(default_factory=list)
+
+
+async def validar_fecha_sin_ordenes(session: AsyncSession, fecha: date) -> None:
     existing = await session.execute(
         select(OrdenProduccion.id).where(OrdenProduccion.fecha_fabricacion == fecha).limit(1)
     )
@@ -75,6 +125,24 @@ async def generar_ordenes(session: AsyncSession, fecha: date) -> list[OrdenProdu
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Ya existen órdenes de producción generadas para {fecha.isoformat()}",
         )
+
+
+async def calcular_ordenes(
+    session: AsyncSession, fecha: date, overrides: dict[int, int] | None = None
+) -> list[OrdenPreview]:
+    """Calcula las órdenes que corresponden a una fecha, sin persistir nada.
+
+    Es la única implementación del cálculo: `generar_ordenes` la usa y
+    después persiste lo que devuelve, de modo que la vista previa y la orden
+    generada coinciden por construcción (ver design.md Decision 2).
+
+    `overrides` mapea `programacion_id` -> cantidad corregida por el usuario.
+    Se indexa por la fila de Programación y no por producto porque un mismo
+    producto puede aparecer en más de una fila del mismo grupo (Decision 3).
+    Una cantidad en 0 excluye la línea, y un grupo que queda sin líneas no
+    genera orden (Decision 7).
+    """
+    overrides = overrides or {}
 
     prog_result = await session.execute(
         select(Programacion).where(
@@ -90,22 +158,23 @@ async def generar_ordenes(session: AsyncSession, fecha: date) -> list[OrdenProdu
     productos_by_id = {p.id: p for p in productos_result.scalars().all()}
 
     # Agrupar por (producto_base_id o producto_id si no tiene base, responsable)
-    # — ver design.md Decision 4 y 8.
-    grupos: dict[tuple[int, str], list[tuple[Programacion, Productos]]] = defaultdict(list)
+    # — ver design.md Decision 4 y 8 de ordenes-produccion-stock.
+    grupos: dict[tuple[int, str], list[tuple[Programacion, Productos, int]]] = defaultdict(list)
     for fila in filas:
         producto = productos_by_id.get(fila.producto_id)
         if producto is None:
             continue
+        cantidad = overrides.get(fila.id, fila.plan)
+        if cantidad is None or cantidad <= 0:
+            # Cantidad puesta en 0 en la vista previa: la línea no va.
+            continue
         base_id = producto.producto_base_id if producto.producto_base_id is not None else producto.id
-        grupos[(base_id, fila.responsable)].append((fila, producto))
+        grupos[(base_id, fila.responsable)].append((fila, producto, cantidad))
 
-    hoy = datetime.now(timezone.utc)
-    ordenes_creadas: list[OrdenProduccion] = []
-    codigo_prefix = fecha.strftime("%y%m%d")
-
-    for idx, ((base_id, responsable), items) in enumerate(sorted(grupos.items(), key=lambda kv: kv[0]), start=1):
+    previews: list[OrdenPreview] = []
+    for (base_id, responsable), items in sorted(grupos.items(), key=lambda kv: kv[0]):
         base_producto = productos_by_id.get(base_id) or await session.get(Productos, base_id)
-        cantidad_total = sum(fila.plan for fila, _ in items)
+        cantidad_total = sum(cantidad for _, _, cantidad in items)
 
         insumo_needs: dict[int, float] = defaultdict(float)
         if base_producto.lote_produccion:
@@ -113,33 +182,111 @@ async def generar_ordenes(session: AsyncSession, fecha: date) -> list[OrdenProdu
             for costo in await _get_costos(session, base_producto.id):
                 insumo_needs[costo.insumo_id] += costo.cantidad * scale
 
-        for fila, producto in items:
+        for fila, producto, cantidad in items:
             if producto.id != base_producto.id and producto.producto_base_id is not None:
                 # Insumos propios adicionales del producto final (relleno,
-                # glaseado, etc.) — se suman aparte de la base compartida,
-                # ver design.md Decision 1.
+                # glaseado, etc.) — se suman aparte de la base compartida.
                 own_costos = await _get_costos(session, producto.id)
                 if own_costos and producto.lote_produccion:
-                    own_scale = fila.plan / producto.lote_produccion
+                    own_scale = cantidad / producto.lote_produccion
                     for costo in own_costos:
                         insumo_needs[costo.insumo_id] += costo.cantidad * own_scale
 
+        # El redondeo se aplica una sola vez, sobre el total acumulado de cada
+        # insumo — nunca sobre cada aporte parcial, que acumularía error en las
+        # órdenes que suman receta base más insumos propios (Decision 4).
+        insumos_redondeados = {
+            insumo_id: _redondear_insumo(cantidad) for insumo_id, cantidad in insumo_needs.items()
+        }
+        insumos_redondeados = {i: c for i, c in insumos_redondeados.items() if c > 0}
+
+        insumos_by_id: dict[int, Insumos] = {}
+        if insumos_redondeados:
+            insumos_result = await session.execute(
+                select(Insumos).where(Insumos.id.in_(insumos_redondeados.keys()))
+            )
+            insumos_by_id = {i.id: i for i in insumos_result.scalars().all()}
+
+        previews.append(
+            OrdenPreview(
+                responsable=responsable,
+                producto_base_id=base_producto.id,
+                producto_base_nombre=base_producto.nombre,
+                lote_produccion=base_producto.lote_produccion,
+                cantidad_total=cantidad_total,
+                productos=[
+                    LineaProductoPreview(
+                        programacion_id=fila.id,
+                        producto_id=producto.id,
+                        producto_nombre=producto.nombre,
+                        cantidad_programada=fila.plan,
+                        cantidad_planeada=cantidad,
+                    )
+                    for fila, producto, cantidad in items
+                ],
+                insumos=[
+                    LineaInsumoPreview(
+                        insumo_id=insumo_id,
+                        insumo_nombre=insumos_by_id[insumo_id].nombre if insumo_id in insumos_by_id else "",
+                        insumo_unidad_medida=(
+                            insumos_by_id[insumo_id].unidad_medida if insumo_id in insumos_by_id else ""
+                        ),
+                        cantidad=cantidad,
+                    )
+                    for insumo_id, cantidad in sorted(insumos_redondeados.items())
+                ],
+            )
+        )
+
+    return previews
+
+
+async def preview_ordenes(
+    session: AsyncSession, fecha: date, overrides: dict[int, int] | None = None
+) -> list[OrdenPreview]:
+    await validar_fecha_sin_ordenes(session, fecha)
+    return await calcular_ordenes(session, fecha, overrides)
+
+
+async def generar_ordenes(
+    session: AsyncSession, fecha: date, overrides: dict[int, int] | None = None
+) -> list[OrdenProduccion]:
+    await validar_fecha_sin_ordenes(session, fecha)
+
+    previews = await calcular_ordenes(session, fecha, overrides)
+    if not previews:
+        return []
+
+    hoy = datetime.now(timezone.utc)
+    ordenes_creadas: list[OrdenProduccion] = []
+    codigo_prefix = fecha.strftime("%y%m%d")
+
+    for idx, preview in enumerate(previews, start=1):
         codigo = f"{codigo_prefix}-{idx:02d}"
         orden = OrdenProduccion(
-            codigo=codigo, fecha_fabricacion=fecha, responsable=responsable, estado="ASIGNADA", fecha_creacion=hoy
+            codigo=codigo,
+            fecha_fabricacion=fecha,
+            responsable=preview.responsable,
+            estado="ASIGNADA",
+            fecha_creacion=hoy,
         )
         session.add(orden)
         await session.flush()
 
-        for fila, producto in items:
+        for linea in preview.productos:
             session.add(
-                OrdenProduccionProductoLinea(orden_id=orden.id, producto_id=producto.id, cantidad_planeada=fila.plan)
+                OrdenProduccionProductoLinea(
+                    orden_id=orden.id, producto_id=linea.producto_id, cantidad_planeada=linea.cantidad_planeada
+                )
             )
-        for insumo_id, cantidad in insumo_needs.items():
-            if cantidad <= 0:
-                continue
-            session.add(OrdenProduccionInsumoLinea(orden_id=orden.id, insumo_id=insumo_id, cantidad=cantidad))
-            session.add(stock_service.crear_reserva(insumo_id, cantidad, codigo))
+        for linea in preview.insumos:
+            # La línea y su RESERVA llevan la misma cantidad entera, así que lo
+            # que muestra la orden es exactamente lo reservado y después
+            # consumido (spec `stock`).
+            session.add(
+                OrdenProduccionInsumoLinea(orden_id=orden.id, insumo_id=linea.insumo_id, cantidad=linea.cantidad)
+            )
+            session.add(stock_service.crear_reserva(linea.insumo_id, linea.cantidad, codigo))
 
         ordenes_creadas.append(orden)
 

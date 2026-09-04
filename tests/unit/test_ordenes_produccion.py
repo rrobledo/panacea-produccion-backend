@@ -232,3 +232,52 @@ async def test_cancelar_only_allowed_from_asignada(client, session):
 
     response = await client.post(f"/costos/ordenes-produccion/{orden_id}/cancelar")
     assert response.status_code == 422
+
+
+async def test_generar_ordenes_adds_own_costos_of_producto_with_base(client, session):
+    """Un producto con base aporta, además de la receta base compartida, sus
+    propios insumos escalados por su propio plan/lote (relleno, glaseado…)."""
+    harina = await _make_insumo(session, nombre="Harina", cantidad=10000)
+    dulce = await _make_insumo(session, nombre="Dulce", cantidad=10000)
+
+    masa = await _make_producto(session, codigo="M3", nombre="Masa3", is_producto=False, lote_produccion=100)
+    await _make_costo(session, masa, harina, cantidad=50)
+
+    medialuna = await _make_producto(
+        session, codigo="F5", nombre="Medialuna3", producto_base_id=masa.id, lote_produccion=100
+    )
+    await _make_costo(session, medialuna, dulce, cantidad=20)
+
+    await _make_programacion(session, medialuna, FECHA, plan=100, responsable="Pasteleria")
+
+    response = await client.post("/costos/ordenes-produccion/generar", json={"fecha": FECHA.isoformat()})
+    assert response.status_code == 201
+    orden = response.json()[0]
+
+    cantidades = {i["insumo_id"]: i["cantidad"] for i in orden["insumos"]}
+    # base: cantidad_total 100 / lote 100 = 1 -> harina 50
+    # propio: plan 100 / lote 100 = 1 -> dulce 20
+    assert cantidades == {harina.id: 50, dulce.id: 20}
+
+
+async def test_generar_ordenes_keeps_one_linea_per_programacion_row(client, session):
+    """Dos filas de Programación del mismo producto y responsable son dos
+    líneas de producto distintas en la misma orden — el producto_id no
+    identifica una línea de forma única (ver design.md Decision 3)."""
+    harina = await _make_insumo(session, nombre="Harina", cantidad=10000)
+    producto = await _make_producto(session, codigo="P15", nombre="Pan6", lote_produccion=100)
+    await _make_costo(session, producto, harina, cantidad=50)
+
+    await _make_programacion(session, producto, FECHA, plan=50, responsable="Panaderia")
+    await _make_programacion(session, producto, FECHA, plan=50, responsable="Panaderia")
+
+    response = await client.post("/costos/ordenes-produccion/generar", json={"fecha": FECHA.isoformat()})
+    assert response.status_code == 201
+    ordenes = response.json()
+    assert len(ordenes) == 1
+    orden = ordenes[0]
+
+    assert len(orden["productos"]) == 2
+    assert sorted(p["cantidad_planeada"] for p in orden["productos"]) == [50, 50]
+    # cantidad_total = 100 -> scale 1 -> harina 50
+    assert {i["insumo_id"]: i["cantidad"] for i in orden["insumos"]} == {harina.id: 50}

@@ -7,6 +7,7 @@ from app.deps import get_session
 from app.schemas.ordenes_produccion import (
     FinalizarOrdenRequest,
     GenerarOrdenesRequest,
+    OrdenPreviewRead,
     OrdenProduccionRead,
 )
 from app.services import ordenes_produccion_service as service
@@ -28,9 +29,21 @@ async def list_ordenes(
     return [OrdenProduccionRead.from_orm_row(o) for o in ordenes]
 
 
+def _overrides(payload: GenerarOrdenesRequest) -> dict[int, int] | None:
+    if payload.cantidades is None:
+        return None
+    return {c.programacion_id: c.cantidad for c in payload.cantidades}
+
+
+@router.post("/preview", response_model=list[OrdenPreviewRead])
+async def preview_ordenes(payload: GenerarOrdenesRequest, session: AsyncSession = Depends(get_session)):
+    """Calcula las órdenes que se generarían para esa fecha, sin persistir nada."""
+    return await service.preview_ordenes(session, payload.fecha, _overrides(payload))
+
+
 @router.post("/generar", response_model=list[OrdenProduccionRead], status_code=status.HTTP_201_CREATED)
 async def generar_ordenes(payload: GenerarOrdenesRequest, session: AsyncSession = Depends(get_session)):
-    ordenes = await service.generar_ordenes(session, payload.fecha)
+    ordenes = await service.generar_ordenes(session, payload.fecha, _overrides(payload))
     return [OrdenProduccionRead.from_orm_row(o) for o in ordenes]
 
 
