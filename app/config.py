@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     cron_secret: str = ""
     cors_origins: str = ""
 
+    # Si es False, iniciar producción NO valida que haya stock físico
+    # suficiente para las líneas de insumo de la orden: la RESERVA (al
+    # generar) y el CONSUMO (al iniciar) se siguen registrando igual, así que
+    # el insumo puede quedar en negativo. Interruptor temporal para no frenar
+    # producción mientras el stock cargado no refleja la realidad.
+    stock_faltantes_bloquea_inicio: bool = True
+
     secret_key: str = ""
     access_token_expire_days: int = 7
     base_url: str = "http://localhost:8000"

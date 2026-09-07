@@ -27,6 +27,7 @@ cp .env.example .env
 | `API_KEYS` | Comma-separated list of accepted `X-API-Key` values for mutating (POST/PUT/PATCH/DELETE) requests. |
 | `CRON_SECRET` | Separate secret required (as `Authorization: Bearer <secret>`) on the scheduled cascade endpoint. |
 | `CORS_ORIGINS` | Comma-separated list of allowed browser origins. No wildcard. |
+| `STOCK_FALTANTES_BLOQUEA_INICIO` | Set to `false` to let an orden de producción start without enough physical stock (the insumo can go negative). RESERVA on generation and CONSUMO on start still get recorded. Temporary switch, defaults to `true`. |
 | `SECRET_KEY` | Signing key for auth JWTs and OAuth `state` tokens. No insecure default — any `/auth/*` or `/profile/*` request fails with a 500 if unset. |
 | `ACCESS_TOKEN_EXPIRE_DAYS` | How long an issued login JWT stays valid, in days. Defaults to `7`. |
 | `BASE_URL` | Used to build the Google OAuth2 callback `redirect_uri` (`<BASE_URL>/auth/google/callback`). Defaults to `http://localhost:8000`. |

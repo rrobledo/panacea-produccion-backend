@@ -9,6 +9,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.models.insumos import Insumos
 from app.models.stock_movimiento import StockMovimiento
 from app.models.ordenes_produccion import (
@@ -413,17 +414,21 @@ async def iniciar_produccion(session: AsyncSession, orden: OrdenProduccion) -> O
             detail=f"Invalid transition: '{orden.estado}' -> 'EN_PRODUCCION'. Expected current state: 'ASIGNADA'",
         )
 
-    faltantes = []
-    for linea in orden.insumos:
-        if linea.insumo.cantidad < linea.cantidad:
-            faltantes.append(
-                f"{linea.insumo.nombre}: necesita {linea.cantidad}, disponible {linea.insumo.cantidad}"
+    # STOCK_FALTANTES_BLOQUEA_INICIO=false desactiva solo esta validación: el
+    # CONSUMO de abajo se registra igual y el insumo puede quedar en negativo
+    # (ver app/config.py).
+    if get_settings().stock_faltantes_bloquea_inicio:
+        faltantes = []
+        for linea in orden.insumos:
+            if linea.insumo.cantidad < linea.cantidad:
+                faltantes.append(
+                    f"{linea.insumo.nombre}: necesita {linea.cantidad}, disponible {linea.insumo.cantidad}"
+                )
+        if faltantes:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Stock físico insuficiente para iniciar producción: " + "; ".join(faltantes),
             )
-    if faltantes:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Stock físico insuficiente para iniciar producción: " + "; ".join(faltantes),
-        )
 
     for linea in orden.insumos:
         session.add(stock_service.crear_consumo(linea.insumo, linea.cantidad, orden.codigo))

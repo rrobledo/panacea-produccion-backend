@@ -1,5 +1,6 @@
 from datetime import date
 
+from app.config import get_settings
 from app.models.insumos import Insumos
 from app.models.productos import Costos, Productos
 from app.models.programacion import Programacion
@@ -205,6 +206,29 @@ async def test_iniciar_blocks_when_insufficient_physical_stock(client, session):
     response = await client.post(f"/costos/ordenes-produccion/{orden_id}/iniciar")
     assert response.status_code == 422
     assert "insuficiente" in response.json()["detail"].lower()
+
+
+async def test_iniciar_allows_insufficient_stock_when_control_disabled(client, session, monkeypatch):
+    harina = await _make_insumo(session, nombre="Harina17", cantidad=10)
+    producto = await _make_producto(session, codigo="P17", nombre="Pan17", lote_produccion=100)
+    await _make_costo(session, producto, harina, cantidad=50)
+    await _make_programacion(session, producto, FECHA, plan=100, responsable="Panaderia")
+
+    generar = await client.post("/costos/ordenes-produccion/generar", json={"fecha": FECHA.isoformat()})
+    orden_id = generar.json()[0]["id"]
+
+    monkeypatch.setenv("STOCK_FALTANTES_BLOQUEA_INICIO", "false")
+    get_settings.cache_clear()
+    try:
+        response = await client.post(f"/costos/ordenes-produccion/{orden_id}/iniciar")
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 200
+    assert response.json()["estado"] == "EN_PRODUCCION"
+    # El CONSUMO se registra igual: el insumo queda en negativo (10 - 50).
+    await session.refresh(harina)
+    assert harina.cantidad == -40
 
 
 async def test_cancelar_releases_reserva_for_new_orden(client, session):
