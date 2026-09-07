@@ -14,9 +14,13 @@ class Settings(BaseSettings):
     # Si es False, iniciar producción NO valida que haya stock físico
     # suficiente para las líneas de insumo de la orden: la RESERVA (al
     # generar) y el CONSUMO (al iniciar) se siguen registrando igual, así que
-    # el insumo puede quedar en negativo. Interruptor temporal para no frenar
-    # producción mientras el stock cargado no refleja la realidad.
-    stock_faltantes_bloquea_inicio: bool = True
+    # el insumo puede quedar en negativo.
+    #
+    # Está en False a propósito: pedido explícito del usuario para no frenar
+    # producción mientras el stock cargado no refleja la realidad. Es un
+    # estado temporal — se vuelve a prender con
+    # STOCK_FALTANTES_BLOQUEA_INICIO=true, sin tocar código.
+    stock_faltantes_bloquea_inicio: bool = False
 
     secret_key: str = ""
     access_token_expire_days: int = 7

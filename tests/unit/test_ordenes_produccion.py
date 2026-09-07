@@ -194,7 +194,9 @@ async def test_finalizar_requires_motivo_and_ubicacion_when_desperdicio_positive
     assert response.status_code == 400  # pydantic validation error (see main.py validation_exception_handler)
 
 
-async def test_iniciar_blocks_when_insufficient_physical_stock(client, session):
+async def test_iniciar_blocks_when_insufficient_physical_stock(client, session, monkeypatch):
+    # El control está apagado por default (ver app/config.py), así que este
+    # test lo prende explícitamente para cubrir la rama que bloquea.
     harina = await _make_insumo(session, nombre="Harina", cantidad=10)
     producto = await _make_producto(session, codigo="P12", nombre="Pan3", lote_produccion=100)
     await _make_costo(session, producto, harina, cantidad=50)
@@ -203,12 +205,20 @@ async def test_iniciar_blocks_when_insufficient_physical_stock(client, session):
     generar = await client.post("/costos/ordenes-produccion/generar", json={"fecha": FECHA.isoformat()})
     orden_id = generar.json()[0]["id"]
 
-    response = await client.post(f"/costos/ordenes-produccion/{orden_id}/iniciar")
+    monkeypatch.setenv("STOCK_FALTANTES_BLOQUEA_INICIO", "true")
+    get_settings.cache_clear()
+    try:
+        response = await client.post(f"/costos/ordenes-produccion/{orden_id}/iniciar")
+    finally:
+        get_settings.cache_clear()
+
     assert response.status_code == 422
     assert "insuficiente" in response.json()["detail"].lower()
 
 
 async def test_iniciar_allows_insufficient_stock_when_control_disabled(client, session, monkeypatch):
+    # Es el comportamiento por default hoy; el setenv de abajo lo deja
+    # explícito para que el test siga cubriendo esta rama si el default cambia.
     harina = await _make_insumo(session, nombre="Harina17", cantidad=10)
     producto = await _make_producto(session, codigo="P17", nombre="Pan17", lote_produccion=100)
     await _make_costo(session, producto, harina, cantidad=50)
