@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     # estado temporal — se vuelve a prender con
     # STOCK_FALTANTES_BLOQUEA_INICIO=true, sin tocar código.
     stock_faltantes_bloquea_inicio: bool = False
+    # MOTOR_GRAFO=true hace que el preview y la generación exploten la receta por
+    # el grafo de procesos en vez de por `costos` + `producto_base_id`. Arranca
+    # apagado a propósito: cambia lo que se reserva de insumos, y el criterio
+    # para prenderlo es el reporte de comparación de F3
+    # (masa-procesos-y-maquinaria, tareas 5.9 y 5.14).
+    motor_grafo: bool = False
 
     secret_key: str = ""
     access_token_expire_days: int = 7

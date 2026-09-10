@@ -1,7 +1,10 @@
 from datetime import date
 
+from sqlalchemy import select
+
 from app.config import get_settings
 from app.models.insumos import Insumos
+from app.models.ordenes_produccion import OrdenProduccionProductoLinea
 from app.models.productos import Costos, Productos
 from app.models.programacion import Programacion
 
@@ -49,6 +52,8 @@ async def _make_programacion(session, producto, fecha, plan, responsable="Todos"
     row = Programacion(fecha=fecha, producto_id=producto.id, producto_nombre=producto.nombre, responsable=responsable, plan=plan, prod=None)
     session.add(row)
     await session.commit()
+    await session.refresh(row)
+    return row
 
 
 FECHA = date(2026, 8, 25)
@@ -300,16 +305,27 @@ async def test_generar_ordenes_adds_own_costos_of_producto_with_base(client, ses
     assert cantidades == {harina.id: 50, dulce.id: 20}
 
 
-async def test_generar_ordenes_keeps_one_linea_per_programacion_row(client, session):
-    """Dos filas de Programación del mismo producto y responsable son dos
-    líneas de producto distintas en la misma orden — el producto_id no
-    identifica una línea de forma única (ver design.md Decision 3)."""
+async def test_generar_ordenes_una_linea_por_producto_con_su_programacion(client, session):
+    """Un producto rinde exactamente una línea, que apunta a su fila de origen.
+
+    Este test decía lo contrario hasta la migración 0027: dos filas de
+    Programación del mismo producto y fecha eran dos líneas distintas en la
+    misma orden, y de ahí salía la Decision 3 de `preview-generacion-ordenes`
+    ("el producto_id no identifica una línea de forma única"). Ese estado ya no
+    es representable — el índice único `costos_programacion_producto_fecha_key`
+    lo prohíbe, ver openspec/changes/masa-procesos-y-maquinaria/ tarea 1.6 en el
+    repo `panacea-produccion`.
+
+    Lo que sobrevive de aquella decisión es el mecanismo, no su justificación:
+    la línea sigue llevando `programacion_id` y los overrides se siguen
+    llevando por ese id, que ahora es la forma explícita de reconciliar la
+    orden contra la Programación (tarea 1.3).
+    """
     harina = await _make_insumo(session, nombre="Harina", cantidad=10000)
     producto = await _make_producto(session, codigo="P15", nombre="Pan6", lote_produccion=100)
     await _make_costo(session, producto, harina, cantidad=50)
 
-    await _make_programacion(session, producto, FECHA, plan=50, responsable="Panaderia")
-    await _make_programacion(session, producto, FECHA, plan=50, responsable="Panaderia")
+    fila = await _make_programacion(session, producto, FECHA, plan=100, responsable="Panaderia")
 
     response = await client.post("/costos/ordenes-produccion/generar", json={"fecha": FECHA.isoformat()})
     assert response.status_code == 201
@@ -317,7 +333,10 @@ async def test_generar_ordenes_keeps_one_linea_per_programacion_row(client, sess
     assert len(ordenes) == 1
     orden = ordenes[0]
 
-    assert len(orden["productos"]) == 2
-    assert sorted(p["cantidad_planeada"] for p in orden["productos"]) == [50, 50]
+    assert len(orden["productos"]) == 1
+    assert orden["productos"][0]["cantidad_planeada"] == 100
     # cantidad_total = 100 -> scale 1 -> harina 50
     assert {i["insumo_id"]: i["cantidad"] for i in orden["insumos"]} == {harina.id: 50}
+
+    linea = (await session.execute(select(OrdenProduccionProductoLinea))).scalars().one()
+    assert linea.programacion_id == fila.id

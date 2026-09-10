@@ -20,6 +20,18 @@ class Productos(Base):
     responsable: Mapped[str] = mapped_column(String(50), default="Todos")
     is_producto: Mapped[bool] = mapped_column(Boolean, default=True)
     habilitado: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Campos de artículo (F2 de masa-procesos-y-maquinaria). Conviven con
+    # `is_producto` y `unidad_medida` hasta que el motor nuevo mande (F4) y los
+    # viejos se retiren (F6, tareas 8.2 y 8.4).
+    #   naturaleza:      INSUMO | SEMIELABORADO | TERMINADO | RESIDUO
+    #   unidad_base:     KG | UN | LT — cómo se cuenta el stock y se factura
+    #   peso_unitario_g: obligatorio si unidad_base = UN; traduce unidades a kilos
+    #   vendible:        independiente de la naturaleza, para que un artículo
+    #                    pueda venderse Y ser componente de otro (caso brownie)
+    naturaleza: Mapped[str] = mapped_column(String(20), default="TERMINADO")
+    unidad_base: Mapped[str] = mapped_column(String(10), default="UN")
+    peso_unitario_g: Mapped[float | None] = mapped_column(Float, default=None)
+    vendible: Mapped[bool] = mapped_column(Boolean, default=True)
     prioridad: Mapped[int] = mapped_column(Integer, default=10)
     # Self-referencial: producto intermedio (is_producto=False) del que este
     # producto se arma. Ver openspec/changes/ordenes-produccion-stock/design.md

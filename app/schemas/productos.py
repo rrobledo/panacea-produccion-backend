@@ -16,6 +16,13 @@ class ProductoBase(BaseModel):
     habilitado: bool = True
     prioridad: int = 10
     producto_base_id: int | None = None
+    # Campos de artículo (F2 de masa-procesos-y-maquinaria). Con default para
+    # que los clientes que todavía no los mandan sigan funcionando: hasta F4 el
+    # motor viejo no los mira.
+    naturaleza: str = "TERMINADO"
+    unidad_base: str = "UN"
+    peso_unitario_g: float | None = None
+    vendible: bool = True
 
 
 class ProductoCreate(ProductoBase):

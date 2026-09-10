@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.maquinaria import OrdenOperacionRead
 from app.schemas.productos import ProductoRead
 from app.schemas.ubicacion import UbicacionRead
 
@@ -11,6 +12,12 @@ class OrdenProduccionProductoLineaRead(BaseModel):
     producto_id: int
     cantidad_planeada: int
     producto: ProductoRead | None
+    # Nulos en las órdenes emitidas por el motor viejo, que no sabía cuánta masa
+    # consume cada rama.
+    programacion_id: int | None = None
+    masa_kg: float | None = None
+    bollos: int | None = None
+    gramaje_g: float | None = None
 
     @classmethod
     def from_orm_row(cls, row) -> "OrdenProduccionProductoLineaRead":
@@ -19,6 +26,10 @@ class OrdenProduccionProductoLineaRead(BaseModel):
             producto_id=row.producto_id,
             cantidad_planeada=row.cantidad_planeada,
             producto=ProductoRead.model_validate(row.producto) if row.producto else None,
+            programacion_id=row.programacion_id,
+            masa_kg=row.masa_kg,
+            bollos=row.bollos,
+            gramaje_g=row.gramaje_g,
         )
 
 
@@ -50,8 +61,14 @@ class OrdenProduccionRead(BaseModel):
     fecha_en_produccion: datetime | None
     fecha_finalizada: datetime | None
     fecha_cancelada: datetime | None
+    proceso_id: int | None = None
+    proceso_version: int | None = None
+    masa_requerida: float | None = None
+    lote_producido: float | None = None
+    masa_desde_stock: float | None = None
     productos: list[OrdenProduccionProductoLineaRead]
     insumos: list[OrdenProduccionInsumoLineaRead]
+    operaciones: list["OrdenOperacionRead"] = []
 
     @classmethod
     def from_orm_row(cls, row) -> "OrdenProduccionRead":
@@ -65,8 +82,14 @@ class OrdenProduccionRead(BaseModel):
             fecha_en_produccion=row.fecha_en_produccion,
             fecha_finalizada=row.fecha_finalizada,
             fecha_cancelada=row.fecha_cancelada,
+            proceso_id=row.proceso_id,
+            proceso_version=row.proceso_version,
+            masa_requerida=row.masa_requerida,
+            lote_producido=row.lote_producido,
+            masa_desde_stock=row.masa_desde_stock,
             productos=[OrdenProduccionProductoLineaRead.from_orm_row(p) for p in row.productos],
             insumos=[OrdenProduccionInsumoLineaRead.from_orm_row(i) for i in row.insumos],
+            operaciones=[OrdenOperacionRead.from_orm_row(o) for o in getattr(row, "operaciones", [])],
         )
 
 
@@ -101,6 +124,9 @@ class LineaProductoPreviewRead(BaseModel):
     producto_nombre: str
     cantidad_programada: int
     cantidad_planeada: int
+    masa_kg: float | None = None
+    bollos: int | None = None
+    gramaje_g: float | None = None
 
 
 class LineaInsumoPreviewRead(BaseModel):
@@ -109,7 +135,8 @@ class LineaInsumoPreviewRead(BaseModel):
     insumo_id: int
     insumo_nombre: str
     insumo_unidad_medida: str
-    cantidad: int
+    # Float desde F4: las cantidades en KG y LT dejan de redondearse a entero.
+    cantidad: float
 
 
 class PreviewOrdenesResponse(BaseModel):
@@ -122,6 +149,9 @@ class PreviewOrdenesResponse(BaseModel):
 
     ordenes: list["OrdenPreviewRead"]
     ordenes_existentes: int
+    # Sobrecapacidad detectada para esa fecha. No bloquea la generación: el jefe
+    # de planta puede saber algo que el sistema no (design.md D9, nivel N2).
+    avisos_capacidad: list[str] = []
 
 
 class OrdenPreviewRead(BaseModel):
@@ -132,6 +162,15 @@ class OrdenPreviewRead(BaseModel):
     producto_base_nombre: str
     lote_produccion: int
     cantidad_total: int
+    proceso_id: int | None = None
+    proceso_version: int | None = None
+    proceso_nombre: str | None = None
+    lote_unidad: str | None = None
+    masa_requerida: float | None = None
+    lote_producido: float | None = None
+    masa_desde_stock: float | None = None
+    sobrante: float | None = None
+    pendientes: list[str] = []
     productos: list[LineaProductoPreviewRead]
     insumos: list[LineaInsumoPreviewRead]
 

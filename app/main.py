@@ -31,7 +31,11 @@ from app.routers import (
     pagos,
     pedidos,
     pedidos_reportes,
+    articulos,
+    costeo_grafo,
+    maquinaria,
     planning,
+    procesos,
     produccion_stats,
     productos,
     productos_fabricados,
@@ -97,6 +101,10 @@ app.include_router(cuenta_corriente_ledger.resumen_router, prefix="/costos")
 app.include_router(libro_iva.router, prefix="/costos")
 app.include_router(ordenes_compra.router, prefix="/costos")
 app.include_router(productos.router, prefix="/costos")
+app.include_router(procesos.router, prefix="/costos")
+app.include_router(articulos.router, prefix="/costos")
+app.include_router(maquinaria.router, prefix="/costos")
+app.include_router(costeo_grafo.router, prefix="/costos")
 app.include_router(costeo.router, prefix="/costos")
 app.include_router(misc.router, prefix="/costos")
 app.include_router(clientes.router, prefix="/costos")

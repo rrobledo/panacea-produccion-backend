@@ -24,6 +24,12 @@ TRUNCATE_TABLES = [
     "ordenes_produccion",
     "stock_movimientos",
     "ubicaciones_ubicacion",
+    "ordenes_produccion_operacion",
+    "procesos_proceso_operacion",
+    "procesos_proceso_linea",
+    "procesos_proceso",
+    "maquinaria_maquina",
+    "costos_centro_trabajo",
     "crm_auditoria",
     "crm_club_socio_cache",
     "crm_actividad",
@@ -83,7 +89,23 @@ async def session():
     # setup makes each test's starting state correct regardless of how the
     # last run ended.
     async with engine.begin() as conn:
-        await conn.execute(text(f"TRUNCATE {', '.join(TRUNCATE_TABLES)} RESTART IDENTITY CASCADE"))
+        # Sólo las que hoy son tablas de verdad. `articulos_final` es un
+        # stand-in local de una VIEW de producción (ver docker/init-db/
+        # 03_productos_costeo.sql): en una base sembrada desde producción llega
+        # como vista, y TRUNCATE sobre una vista aborta el fixture entero y con
+        # él toda la suite. Filtrar por relkind hace que el fixture funcione con
+        # las dos formas sin tocar el esquema compartido.
+        reales = (
+            await conn.execute(
+                text(
+                    "SELECT relname FROM pg_class "
+                    "WHERE relkind = 'r' AND relname = ANY(:nombres)"
+                ),
+                {"nombres": TRUNCATE_TABLES},
+            )
+        ).scalars().all()
+        ordenadas = [t for t in TRUNCATE_TABLES if t in set(reales)]
+        await conn.execute(text(f"TRUNCATE {', '.join(ordenadas)} RESTART IDENTITY CASCADE"))
     factory = async_sessionmaker(bind=engine, expire_on_commit=False)
     async with factory() as db_session:
         yield db_session
@@ -124,3 +146,25 @@ async def auth_header(session, monkeypatch):
 
     yield _make
     get_settings.cache_clear()
+
+
+@pytest_asyncio.fixture
+async def correr_script(session):
+    """Ejecuta un script SQL de `scripts/` dentro de la transacción del test.
+
+    Los scripts de migración de datos son SQL puro y se corren con psql, así que
+    los tests los ejecutan tal cual en vez de reimplementar su lógica: lo que se
+    prueba es el archivo que después se va a correr en producción, no una copia.
+
+    Se usa la conexión asyncpg cruda porque el protocolo simple admite varias
+    sentencias en un mismo envío; `session.execute` prepara una sola por vez y
+    rechazaría un archivo entero.
+    """
+    from pathlib import Path
+
+    async def _correr(nombre: str) -> None:
+        sql = (Path(__file__).resolve().parents[1] / "scripts" / nombre).read_text()
+        raw = await (await session.connection()).get_raw_connection()
+        await raw.driver_connection.execute(sql)
+
+    return _correr

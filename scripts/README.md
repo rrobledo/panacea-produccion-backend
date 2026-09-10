@@ -1,7 +1,41 @@
 # scripts/
 
-One-off operational scripts. Each one is run manually (`python -m
-scripts.<name>`), not part of the request-serving app.
+One-off operational scripts, run manually — not part of the request-serving
+app. Two shapes coexist:
+
+- **`.sql`** — se corren con `psql`. Dry run envolviendo el archivo en una
+  transacción que se revierte; los `SELECT` de reporte se imprimen igual, así
+  que lo listado es exactamente lo que pasaría:
+
+  ```bash
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "BEGIN;" -f scripts/<name>.sql -c "ROLLBACK;"   # dry run
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f scripts/<name>.sql                          # apply
+  ```
+
+- **`.py`** — se corren con `python -m scripts.<name>`, dry run por defecto y
+  `--apply` para escribir.
+
+Los scripts de migración de datos del change `masa-procesos-y-maquinaria` son
+SQL puro, y los tests que los cubren ejecutan el archivo tal cual en lugar de
+reimplementar su lógica (ver el fixture `correr_script` en `tests/conftest.py`):
+lo que se prueba es el archivo que después se corre en producción.
+
+## `dedupe_programacion.sql`
+
+Colapsa las filas duplicadas de `costos_programacion` a una sola por
+`(producto_id, fecha)`, sumando `plan` y `prod` en la fila de menor `id`.
+Requisito previo de `migrations/0027_programacion_producto_fecha_unico.sql`,
+que falla al crear el índice único si todavía quedan duplicados. Idempotente.
+
+## `backfill_grafo_procesos.sql`
+
+Traduce `costos_productos` + `costos_costos` + `producto_base_id` al grafo de
+procesos: campos de artículo (`naturaleza`, `unidad_base`, `vendible`) y un
+proceso por cada forma del modelo viejo (ELABORACION 1:1, DIVISION por masa con
+hijos, TRANSFORMACION para el hijo con insumos propios). Requiere
+`migrations/0028_grafo_procesos.sql`. Idempotente: cada `INSERT` está guardado
+por un `NOT EXISTS`, así que se puede correr varias veces mientras el catálogo
+se va cargando, y no pisa los gramajes ya relevados.
 
 ## `migrate_ctacteprov_to_compras.py`
 

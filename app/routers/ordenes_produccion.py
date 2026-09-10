@@ -39,8 +39,15 @@ def _overrides(payload: GenerarOrdenesRequest) -> dict[int, int] | None:
 @router.post("/preview", response_model=PreviewOrdenesResponse)
 async def preview_ordenes(payload: GenerarOrdenesRequest, session: AsyncSession = Depends(get_session)):
     """Calcula las órdenes pendientes de esa fecha, sin persistir nada."""
-    ordenes, existentes = await service.preview_ordenes(session, payload.fecha, _overrides(payload))
-    return {"ordenes": ordenes, "ordenes_existentes": existentes}
+    ordenes, existentes, avisos = await service.preview_ordenes(session, payload.fecha, _overrides(payload))
+    return {"ordenes": ordenes, "ordenes_existentes": existentes, "avisos_capacidad": avisos}
+
+
+@router.post("/comparar")
+async def comparar_motores(payload: GenerarOrdenesRequest, session: AsyncSession = Depends(get_session)):
+    # Read-only: no persiste nada, igual que el preview. Es lo que se mira antes
+    # de dejar que el motor nuevo cambie lo que se reserva (F3, tarea 4.7).
+    return await service.comparar_motores(session, payload.fecha)
 
 
 @router.post("/generar", response_model=list[OrdenProduccionRead], status_code=status.HTTP_201_CREATED)

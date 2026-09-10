@@ -18,12 +18,26 @@ class OrdenProduccion(Base):
     fecha_en_produccion: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     fecha_finalizada: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     fecha_cancelada: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Contra qué versión de receta se emitió. Nullable y sin poblar hasta F4
+    # (tarea 5.7); existe desde F2 porque la validación de versionado necesita
+    # poder preguntar si una versión ya fue usada por una orden.
+    proceso_id: Mapped[int | None] = mapped_column(ForeignKey("procesos_proceso.id"), default=None)
+    proceso_version: Mapped[int | None] = mapped_column(Integer, default=None)
+    # Lo que las ramas pedían, lo que efectivamente se amasa y cuánto salió de
+    # stock: el sobrante queda declarado en vez de escondido (design.md D5).
+    masa_requerida: Mapped[float | None] = mapped_column(Float, default=None)
+    lote_producido: Mapped[float | None] = mapped_column(Float, default=None)
+    masa_desde_stock: Mapped[float | None] = mapped_column(Float, default=None)
 
     productos: Mapped[list["OrdenProduccionProductoLinea"]] = relationship(
         back_populates="orden", cascade="all, delete-orphan", lazy="selectin"
     )
     insumos: Mapped[list["OrdenProduccionInsumoLinea"]] = relationship(
         back_populates="orden", cascade="all, delete-orphan", lazy="selectin"
+    )
+    operaciones: Mapped[list["OrdenOperacion"]] = relationship(
+        "OrdenOperacion", cascade="all, delete-orphan", lazy="selectin",
+        order_by="OrdenOperacion.orden, OrdenOperacion.id",
     )
 
 
@@ -34,6 +48,17 @@ class OrdenProduccionProductoLinea(Base):
     orden_id: Mapped[int] = mapped_column(ForeignKey("ordenes_produccion.id"))
     producto_id: Mapped[int] = mapped_column(ForeignKey("costos_productos.id"))
     cantidad_planeada: Mapped[int] = mapped_column(Integer)
+    # De qué fila de Programación salió esta línea. Es un puntero de
+    # procedencia, no una dependencia: nullable porque las órdenes emitidas
+    # antes de la migración 0026 no tienen cómo saberlo, y SET NULL porque
+    # borrar la fila de Programación no puede invalidar una orden ya emitida.
+    programacion_id: Mapped[int | None] = mapped_column(
+        ForeignKey("costos_programacion.id", ondelete="SET NULL"), default=None
+    )
+    # Los tres números del bloque de partición de la orden impresa.
+    masa_kg: Mapped[float | None] = mapped_column(Float, default=None)
+    bollos: Mapped[int | None] = mapped_column(Integer, default=None)
+    gramaje_g: Mapped[float | None] = mapped_column(Float, default=None)
 
     orden: Mapped[OrdenProduccion] = relationship(back_populates="productos")
     producto = relationship("Productos", lazy="joined")

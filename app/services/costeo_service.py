@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.productos import Costos, Productos
 from app.services.personal_service import calcular_liquidacion
 
@@ -80,10 +81,43 @@ async def get_cost_by_product(
     ]
     detalle_costo.sort(key=lambda x: x["porcentaje_del_total"], reverse=True)
 
+    # F6 de masa-procesos-y-maquinaria: con el motor del grafo activo, las tres
+    # capas del costo salen del grafo en vez de aplanar todo a insumos, y el
+    # semielaborado entra ya calculado. El cálculo viejo queda intacto detrás
+    # del mismo flag que el motor de órdenes, para poder volver sin desplegar.
+    capas = None
+    if get_settings().motor_grafo:
+        from app.services import costeo_grafo_service
+
+        capas = await costeo_grafo_service.costo_de_articulo(session, producto_id)
+        if not capas.pendientes and capas.cantidad_buena:
+            costo_unitario_mp = round(capas.costo_insumos / capas.cantidad_buena, 2)
+            costo_mo = capas.costo_mano_obra
+            costo_fab = capas.costo_maquina
+            detalle_costo = [
+                {
+                    "insumo_nombre": d["nombre"],
+                    "cantidad": d["cantidad"],
+                    "costo_individual": d["importe"],
+                    "porcentaje_del_total": (
+                        round(d["importe"] / capas.costo_total * 100, 2) if capas.costo_total else 0
+                    ),
+                    "tipo": d["tipo"],
+                }
+                for d in capas.detalle
+            ]
+            detalle_costo.sort(key=lambda x: x["porcentaje_del_total"], reverse=True)
+
     return {
         "producto_nombre": prod.nombre,
         "lote_produccion": lote_produccion,
         "tiempo_produccion": prod.tiempo_produccion,
+        # Una sola figura por concepto: `costo_unitario_maquina` reemplaza al par
+        # `costo_unitario_fab` / `costo_unitario_fab_new`, que convivían sin que
+        # nada dijera cuál regía (tarea 7.10).
+        "costo_unitario_maquina": round(costo_fab / lote_produccion, 2),
+        "costeo_por_capas": capas is not None and not capas.pendientes,
+        "pendientes_costeo": capas.pendientes if capas else [],
         "utilidad": utilidad,
         "precio_actual": precio_actual,
         "precio_sugerido": round(precio_sugerido, 2),
