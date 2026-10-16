@@ -91,6 +91,11 @@ async def _detectar_ciclo(session: AsyncSession, codigo: str, payload: ProcesoWr
 
     La validación de auto-referencia que ya existe en `ProductoForm.jsx` no
     alcanza: sólo mira un salto, y un ciclo puede tener tres procesos.
+
+    La versión guardada del proceso (`codigo`) se saca del grafo: el payload la
+    reemplaza, y dejarla adentro hace que una edición choque contra las aristas
+    viejas de sí misma ("Pan Francés -> Pan Francés") aunque el proceso nuevo
+    ya no produzca lo que consume.
     """
     entradas = [linea.producto_id for linea in payload.lineas if linea.rol == "ENTRADA" and linea.producto_id]
     if not entradas:
@@ -105,6 +110,7 @@ async def _detectar_ciclo(session: AsyncSession, codigo: str, payload: ProcesoWr
                 ProcesoLinea.rol.in_(ROLES_SALIDA),
                 ProcesoLinea.producto_id.is_not(None),
                 Proceso.vigente_hasta.is_(None),
+                Proceso.codigo != codigo,
             )
         )
     ).all()
@@ -121,6 +127,7 @@ async def _detectar_ciclo(session: AsyncSession, codigo: str, payload: ProcesoWr
                 ProcesoLinea.rol == "ENTRADA",
                 ProcesoLinea.producto_id.is_not(None),
                 Proceso.vigente_hasta.is_(None),
+                Proceso.codigo != codigo,
             )
         )
     ).all()
@@ -129,9 +136,8 @@ async def _detectar_ciclo(session: AsyncSession, codigo: str, payload: ProcesoWr
         consume.setdefault(proceso_codigo, []).append(producto_id)
 
     # Lo que este proceso produce. El recorrido hacia atrás tiene que chocar
-    # contra esto: el proceso que se está guardando todavía no está en el
-    # grafo, así que buscarlo por `codigo` sólo alcanza cuando se edita uno ya
-    # existente. Un alta cierra el ciclo por sus salidas, no por su código.
+    # contra esto: el proceso que se está guardando no está en el grafo (ni en
+    # un alta ni en una edición), así que el ciclo se cierra por sus salidas.
     salidas_nuevas = {
         linea.producto_id for linea in payload.lineas if linea.rol in ROLES_SALIDA and linea.producto_id
     }
@@ -143,8 +149,6 @@ async def _detectar_ciclo(session: AsyncSession, codigo: str, payload: ProcesoWr
         if origen is None:
             return None
         origen_codigo, origen_nombre = origen
-        if origen_codigo == codigo:
-            return cadena + [origen_nombre]
         if origen_codigo in vistos:
             return None
         vistos.add(origen_codigo)
@@ -313,7 +317,9 @@ async def actualizar_proceso(session: AsyncSession, proceso: Proceso, payload: P
     cada corrección de tipeo llenaría la tabla de versiones que nadie va a leer.
     """
     _validar_forma(payload)
-    await _detectar_ciclo(session, payload.codigo, payload)
+    # El código guardado, no el del payload: si la edición lo cambia, la
+    # versión vieja igual es la que se está reemplazando.
+    await _detectar_ciclo(session, proceso.codigo, payload)
 
     if not await _fue_usado_por_una_orden(session, proceso.id):
         _aplicar_campos(proceso, payload)

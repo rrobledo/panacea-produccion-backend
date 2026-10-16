@@ -380,6 +380,51 @@ async def test_una_cadena_sin_ciclo_se_acepta(client, session):
     assert (primero.status_code, segundo.status_code) == (201, 201)
 
 
+async def test_editar_un_proceso_no_choca_contra_su_version_guardada(client, session):
+    # La versión guardada produce "masa"; la edición pasa a consumirla y a
+    # producir "pan". No hay ciclo: la versión vieja es la que se reemplaza.
+    masa = await _make_producto(session, codigo="GEM", nombre="Masa")
+    pan = await _make_producto(session, codigo="GEP", nombre="Pan")
+    creado = await client.post("/costos/procesos", json=_payload(
+        codigo="E-PAN", nombre="Elaboracion de Pan Frances",
+        lineas=[_linea(rol="SALIDA", producto_id=masa.id, cantidad=1)],
+    ))
+    assert creado.status_code == 201
+
+    for codigo in ("E-PAN", "E-PAN-2"):  # también si la edición cambia el código
+        response = await client.put(f"/costos/procesos/{creado.json()['id']}", json=_payload(
+            codigo=codigo, nombre="Elaboracion de Pan Frances",
+            lineas=[_linea(rol="ENTRADA", producto_id=masa.id, cantidad=1),
+                    _linea(rol="SALIDA", producto_id=pan.id, cantidad=1)],
+        ))
+        assert response.status_code == 200, response.json()
+
+
+async def test_editar_un_proceso_que_cierra_un_ciclo_sigue_rechazado(client, session):
+    a = await _make_producto(session, codigo="GKA", nombre="A")
+    b = await _make_producto(session, codigo="GKB", nombre="B")
+    x = await _make_producto(session, codigo="GKX", nombre="X")
+    await client.post("/costos/procesos", json=_payload(
+        codigo="K-AB", nombre="A a B",
+        lineas=[_linea(rol="ENTRADA", producto_id=a.id, cantidad=1),
+                _linea(rol="SALIDA", producto_id=b.id, cantidad=1)],
+    ))
+    creado = await client.post("/costos/procesos", json=_payload(
+        codigo="K-BX", nombre="B a X",
+        lineas=[_linea(rol="ENTRADA", producto_id=b.id, cantidad=1),
+                _linea(rol="SALIDA", producto_id=x.id, cantidad=1)],
+    ))
+
+    response = await client.put(f"/costos/procesos/{creado.json()['id']}", json=_payload(
+        codigo="K-BX", nombre="B a A",
+        lineas=[_linea(rol="ENTRADA", producto_id=b.id, cantidad=1),
+                _linea(rol="SALIDA", producto_id=a.id, cantidad=1)],
+    ))
+
+    assert response.status_code == 422
+    assert "A a B" in response.json()["detail"]
+
+
 # ── 2.11 y 2.12 · lectura y escritura ───────────────────────────────────────
 
 async def test_get_proceso_devuelve_el_grafo_completo(client, session):
