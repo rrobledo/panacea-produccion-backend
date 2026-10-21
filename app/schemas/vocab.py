@@ -78,7 +78,7 @@ PEDIDO_VALID_TRANSITIONS: dict[str, str] = {
 }
 # Historial de estados: campo de fecha que registra el momento en que se
 # alcanzó cada estado (incluye CANCELADO, transición lateral aparte de la
-# secuencia de arriba) — mismo propósito que REMITO_ESTADO_TIMESTAMP_FIELD.
+# secuencia de arriba).
 PEDIDO_ESTADO_TIMESTAMP_FIELD: dict[str, str] = {
     "EN_PREPARACION": "fecha_en_preparacion",
     "PREPARADO": "fecha_preparado",
@@ -86,21 +86,10 @@ PEDIDO_ESTADO_TIMESTAMP_FIELD: dict[str, str] = {
     "ENTREGADO": "fecha_entregado",
     "CANCELADO": "fecha_cancelado",
 }
-
-RemitoTipo = Literal["VENTA", "TRANSFERENCIA"]
-
-RemitoEstado = Literal["LISTO", "EN_TRANSITO", "RECIBIDO"]
-# El remito nace en LISTO (fecha_listo se setea en el momento de creación,
-# no hay más paso PENDIENTE/EN_PREPARACION previo — ver
-# openspec/changes/pedidos-y-remitos/specs/remitos/spec.md).
-REMITO_VALID_TRANSITIONS: dict[str, str] = {
-    "LISTO": "EN_TRANSITO",
-    "EN_TRANSITO": "RECIBIDO",
-}
-REMITO_ESTADO_TIMESTAMP_FIELD: dict[str, str] = {
-    "EN_TRANSITO": "fecha_despacho",
-    "RECIBIDO": "fecha_recibido",
-}
+# Un remito directo (es_remito = true) nace en LISTO_PARA_ENTREGA y solo
+# puede avanzar desde ahí — ver
+# openspec/changes/unificar-pedidos-y-remitos/specs/envios/spec.md.
+REMITO_ESTADO_INICIAL = "LISTO_PARA_ENTREGA"
 
 StockMovimientoTipo = Literal["RESERVA", "CONSUMO", "AJUSTE"]
 

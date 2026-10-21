@@ -21,9 +21,8 @@ router = APIRouter(prefix="/pedidos-reportes", tags=["pedidos-reportes"])
 
 # EN_PREPARACION and PREPARADO merge into one "en preparación" bucket, same
 # as the legacy Remitos.estado report merged en_produccion/preparando —
-# see design.md Decision 8. There's no bucket for Remito's own EN_TRANSITO
-# (legacy "en_camino"): that concept now lives entirely on Remito, not on
-# Pedido, and has no equivalent here.
+# see design.md Decision 8. There's no bucket for the legacy "en_camino":
+# the unified envío has no EN_TRANSITO estado either.
 _ESTADO_COUNT_FIELD = {
     "PENDIENTE": "total_pendientes",
     "EN_PREPARACION": "total_en_preparacion",
@@ -35,8 +34,16 @@ _ESTADO_COUNT_FIELD = {
 
 
 def _pedidos_stmt():
-    return select(Pedido).options(
-        selectinload(Pedido.detalles).selectinload(PedidoDetalle.producto).selectinload(Productos.producto_base)
+    # Los remitos directos (es_remito) no tienen nada pedido: nunca están
+    # pendientes — ver specs/envios/spec.md "Reportes de pendientes excluyen
+    # remitos directos".
+    return (
+        select(Pedido)
+        .options(
+            selectinload(Pedido.detalles).selectinload(PedidoDetalle.producto).selectinload(Productos.producto_base),
+            selectinload(Pedido.remitos_legacy),
+        )
+        .where(Pedido.es_remito.is_(False))
     )
 
 
@@ -99,6 +106,7 @@ async def productos_pendientes_por_dia(
         JOIN pedidos_pedido p       ON d.pedido_id = p.id
         JOIN costos_productos prod  ON d.producto_id = prod.id
         WHERE p.estado NOT IN ('ENTREGADO', 'CANCELADO')
+          AND NOT p.es_remito
           AND (CAST(:fecha_desde AS date) IS NULL OR DATE(p.fecha_entrega) >= CAST(:fecha_desde AS date))
           AND (CAST(:fecha_hasta AS date) IS NULL OR DATE(p.fecha_entrega) <= CAST(:fecha_hasta AS date))
         GROUP BY DATE(p.fecha_entrega), prod.responsable, prod.nombre

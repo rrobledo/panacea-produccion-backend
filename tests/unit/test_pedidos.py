@@ -163,6 +163,7 @@ async def test_cancelar_pedido_pendiente(client, session):
 
 
 async def test_crear_pedido_tipo_sucursal(client, session):
+    fabrica_id = await _make_sucursal(client, "Fábrica", tipo="FABRICA")
     sucursal_id = await _make_sucursal(client, "Centro")
     now = datetime.now(timezone.utc)
 
@@ -182,6 +183,8 @@ async def test_crear_pedido_tipo_sucursal(client, session):
     assert body["cliente_id"] is None
     assert body["sucursal_id"] == sucursal_id
     assert body["sucursal"]["nombre"] == "Centro"
+    # Sin origen_sucursal_id, el origen es la única sucursal FABRICA.
+    assert body["origen_sucursal_id"] == fabrica_id
 
 
 async def test_pedido_sucursal_con_cliente_es_rechazado(client, session):

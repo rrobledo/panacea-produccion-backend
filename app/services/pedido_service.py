@@ -5,17 +5,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.pedido import Pedido, PedidoDetalle
+from app.models.pedido import Pedido, PedidoDetalle, PedidoRemitoLegacy
 from app.models.productos import Productos
-from app.models.remito import Remito, RemitoDetalle
 from app.models.sucursal import Sucursal
-from app.schemas.pedido import PedidoCreate, PedidoEntregaRequest, PedidoUpdate
-from app.schemas.vocab import PEDIDO_ESTADO_TIMESTAMP_FIELD, PEDIDO_VALID_TRANSITIONS
+from app.schemas.pedido import PedidoCreate, PedidoEntregaRequest, PedidoFacturacionRequest, PedidoUpdate
+from app.schemas.vocab import PEDIDO_ESTADO_TIMESTAMP_FIELD, PEDIDO_VALID_TRANSITIONS, REMITO_ESTADO_INICIAL
 
-# Estados that generate a Remito when reached — see
-# specs/pedidos/spec.md "Generación automática de remito al completar la
-# entrega" and design.md Decision 3.
-_REMITO_GENERATING_ESTADOS = {"LISTO_PARA_ENTREGA", "ENTREGADO"}
+# Estados en los que un envío puede marcarse como facturado — ver
+# openspec/changes/unificar-pedidos-y-remitos/design.md D5.
+_FACTURABLE_ESTADOS = {"LISTO_PARA_ENTREGA", "ENTREGADO"}
+
+
+def _unprocessable(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
 
 def _pedido_stmt():
@@ -24,13 +26,26 @@ def _pedido_stmt():
     # fire once Productos is reached via another relationship's selectinload
     # chain in this async setup.
     return select(Pedido).options(
-        selectinload(Pedido.detalles).selectinload(PedidoDetalle.producto).selectinload(Productos.producto_base)
+        selectinload(Pedido.detalles).selectinload(PedidoDetalle.producto).selectinload(Productos.producto_base),
+        selectinload(Pedido.remitos_legacy),
     )
 
 
-def _add_detalle_rows(session: AsyncSession, pedido_id: int, detalles) -> None:
+def _add_detalle_rows(session: AsyncSession, pedido_id: int, detalles, es_remito: bool) -> None:
     for item in detalles:
-        if item.cantidad_pedida > 0:
+        if es_remito:
+            # Remito directo: nada pedido, lo despachado va en cantidad_entregada.
+            if item.cantidad_entregada > 0:
+                session.add(
+                    PedidoDetalle(
+                        pedido_id=pedido_id,
+                        producto_id=item.producto_id,
+                        cantidad_pedida=0,
+                        cantidad_entregada=item.cantidad_entregada,
+                        observaciones=item.observaciones,
+                    )
+                )
+        elif item.cantidad_pedida > 0:
             session.add(
                 PedidoDetalle(
                     pedido_id=pedido_id,
@@ -43,10 +58,22 @@ def _add_detalle_rows(session: AsyncSession, pedido_id: int, detalles) -> None:
 
 async def create_pedido(session: AsyncSession, payload: PedidoCreate) -> Pedido:
     data = payload.model_dump(exclude={"detalles"})
-    pedido = Pedido(fecha_carga=datetime.now(timezone.utc), **data)
+    if payload.tipo == "SUCURSAL" and payload.origen_sucursal_id is None:
+        fabrica = await _get_fabrica_sucursal(session)
+        if fabrica.id == payload.sucursal_id:
+            raise _unprocessable("origen_sucursal_id and sucursal_id must be different")
+        data["origen_sucursal_id"] = fabrica.id
+
+    now = datetime.now(timezone.utc)
+    pedido = Pedido(fecha_carga=now, **data)
+    if payload.es_remito:
+        # El remito directo nace listo para entregar, sin pasar por la
+        # preparación — ver specs/envios/spec.md "Remito directo como envío".
+        pedido.estado = REMITO_ESTADO_INICIAL
+        setattr(pedido, PEDIDO_ESTADO_TIMESTAMP_FIELD[REMITO_ESTADO_INICIAL], now)
     session.add(pedido)
     await session.flush()
-    _add_detalle_rows(session, pedido.id, payload.detalles)
+    _add_detalle_rows(session, pedido.id, payload.detalles, payload.es_remito)
     await session.commit()
     return await get_pedido(session, pedido.id)
 
@@ -56,7 +83,11 @@ async def list_pedidos(
     tipo: str | None = None,
     cliente_id: int | None = None,
     sucursal_id: int | None = None,
+    origen_sucursal_id: int | None = None,
     estado: str | None = None,
+    es_remito: bool | None = None,
+    facturado: bool | None = None,
+    remito_legacy_id: int | None = None,
     fecha_desde: datetime | None = None,
     fecha_hasta: datetime | None = None,
     skip: int = 0,
@@ -69,8 +100,20 @@ async def list_pedidos(
         stmt = stmt.where(Pedido.cliente_id == cliente_id)
     if sucursal_id is not None:
         stmt = stmt.where(Pedido.sucursal_id == sucursal_id)
+    if origen_sucursal_id is not None:
+        stmt = stmt.where(Pedido.origen_sucursal_id == origen_sucursal_id)
     if estado is not None:
         stmt = stmt.where(Pedido.estado == estado)
+    if es_remito is not None:
+        stmt = stmt.where(Pedido.es_remito == es_remito)
+    if facturado is not None:
+        stmt = stmt.where(Pedido.fecha_facturado.is_not(None) if facturado else Pedido.fecha_facturado.is_(None))
+    if remito_legacy_id is not None:
+        stmt = stmt.where(
+            Pedido.id.in_(
+                select(PedidoRemitoLegacy.pedido_id).where(PedidoRemitoLegacy.remito_legacy_id == remito_legacy_id)
+            )
+        )
     if fecha_desde:
         stmt = stmt.where(Pedido.fecha_entrega >= fecha_desde)
     if fecha_hasta:
@@ -88,12 +131,14 @@ async def get_pedido(session: AsyncSession, pedido_id: int) -> Pedido:
     return row
 
 
-def ensure_pendiente(pedido: Pedido) -> None:
-    if pedido.estado != "PENDIENTE":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Only pedidos in 'PENDIENTE' estado can be edited or deleted",
-        )
+def ensure_editable(pedido: Pedido) -> None:
+    if pedido.es_remito:
+        if pedido.estado != REMITO_ESTADO_INICIAL or pedido.fecha_facturado is not None:
+            raise _unprocessable(
+                f"Only remitos in '{REMITO_ESTADO_INICIAL}' estado and not yet facturados can be edited or deleted"
+            )
+    elif pedido.estado != "PENDIENTE":
+        raise _unprocessable("Only pedidos in 'PENDIENTE' estado can be edited or deleted")
 
 
 async def update_pedido(session: AsyncSession, pedido: Pedido, payload: PedidoUpdate) -> Pedido:
@@ -102,18 +147,23 @@ async def update_pedido(session: AsyncSession, pedido: Pedido, payload: PedidoUp
         setattr(pedido, field, value)
 
     if payload.detalles is not None:
+        if pedido.es_remito and any(item.cantidad_pedida != 0 for item in payload.detalles):
+            raise _unprocessable("cantidad_pedida must be 0 on every line of a remito")
         # Merge by producto_id instead of delete-and-recreate, so
         # fecha_creacion is preserved on items that already existed — it
         # only advances for genuinely new lines. See PedidoDetalle.fecha_creacion.
         existentes = {d.producto_id: d for d in pedido.detalles}
         vistos: set[int] = set()
         for item in payload.detalles:
-            if item.cantidad_pedida <= 0:
+            if item.cantidad_pedida <= 0 and item.cantidad_entregada <= 0:
                 continue
             vistos.add(item.producto_id)
             detalle = existentes.get(item.producto_id)
             if detalle is not None:
                 detalle.cantidad_pedida = item.cantidad_pedida
+                if pedido.es_remito:
+                    # En un remito lo editable es lo despachado.
+                    detalle.cantidad_entregada = item.cantidad_entregada
                 detalle.observaciones = item.observaciones
             else:
                 session.add(
@@ -135,10 +185,9 @@ async def update_pedido(session: AsyncSession, pedido: Pedido, payload: PedidoUp
 
 async def registrar_entrega(session: AsyncSession, pedido: Pedido, payload: PedidoEntregaRequest) -> Pedido:
     if pedido.estado in ("ENTREGADO", "CANCELADO"):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Cannot register entrega for a pedido in estado '{pedido.estado}'",
-        )
+        raise _unprocessable(f"Cannot register entrega for a pedido in estado '{pedido.estado}'")
+    if pedido.fecha_facturado is not None:
+        raise _unprocessable("Cannot register entrega for a facturado pedido")
 
     detalle_by_id = {d.id: d for d in pedido.detalles}
     for linea in payload.lineas:
@@ -162,10 +211,10 @@ async def registrar_entrega(session: AsyncSession, pedido: Pedido, payload: Pedi
 
 
 async def _get_fabrica_sucursal(session: AsyncSession) -> Sucursal:
-    # Origen implícito de los remitos TRANSFERENCIA generados a partir de un
-    # Pedido tipo=SUCURSAL: la sucursal, al igual que un cliente, no elige
-    # su propio origen — siempre se despacha desde "la fábrica". Requiere
-    # que exista exactamente una Sucursal tipo=FABRICA.
+    # Origen por defecto de un envío tipo=SUCURSAL que no informa
+    # origen_sucursal_id: la sucursal, al igual que un cliente, en general no
+    # elige su propio origen — se despacha desde "la fábrica". Requiere que
+    # exista exactamente una Sucursal tipo=FABRICA.
     result = await session.execute(select(Sucursal).where(Sucursal.tipo == "FABRICA"))
     fabricas = list(result.scalars().all())
     if len(fabricas) != 1:
@@ -179,72 +228,14 @@ async def _get_fabrica_sucursal(session: AsyncSession) -> Sucursal:
     return fabricas[0]
 
 
-async def _generar_remito(session: AsyncSession, pedido: Pedido) -> None:
-    # Only the lines whose cantidad_entregada grew since the last remito
-    # generated for this pedido — see design.md Decision 3.
-    incrementos = [(d, d.cantidad_entregada - d.cantidad_remitida) for d in pedido.detalles]
-    incrementos = [(d, inc) for d, inc in incrementos if inc > 0]
-    if not incrementos:
-        # No new delta. If a remito was already generated earlier for this
-        # pedido (cantidad_remitida > 0 somewhere), this is just a later
-        # step in the same flow with nothing new to ship (e.g. the whole
-        # order was delivered in one shot at LISTO_PARA_ENTREGA, and
-        # ENTREGADO is now just an administrative step) — skip silently
-        # rather than blocking the transition. Only reject when nothing
-        # was EVER delivered for this pedido, since generating the very
-        # first remito with zero lines makes no sense.
-        ya_genero_remito = any(d.cantidad_remitida > 0 for d in pedido.detalles)
-        if not ya_genero_remito:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="No hay ninguna entrega registrada para generar un remito",
-            )
-        return
-
-    now = datetime.now(timezone.utc)
-    # El pedido llegando a LISTO_PARA_ENTREGA/ENTREGADO ya documenta la
-    # entrega en sí — el remito generado no necesita su propio seguimiento
-    # de despacho/recepción, nace directamente en RECIBIDO.
-    if pedido.tipo == "SUCURSAL":
-        fabrica = await _get_fabrica_sucursal(session)
-        remito = Remito(
-            tipo="TRANSFERENCIA",
-            origen_sucursal_id=fabrica.id,
-            destino_sucursal_id=pedido.sucursal_id,
-            pedido_id=pedido.id,
-            vendedor=pedido.vendedor,
-            fecha_carga=now,
-            fecha_listo=now,
-            fecha_despacho=now,
-            fecha_recibido=now,
-        )
-    else:
-        remito = Remito(
-            tipo="VENTA",
-            cliente_id=pedido.cliente_id,
-            pedido_id=pedido.id,
-            vendedor=pedido.vendedor,
-            fecha_carga=now,
-            fecha_listo=now,
-            fecha_despacho=now,
-            fecha_recibido=now,
-        )
-    session.add(remito)
-    await session.flush()
-    for detalle, incremento in incrementos:
-        session.add(RemitoDetalle(remito_id=remito.id, producto_id=detalle.producto_id, cantidad=incremento))
-        detalle.cantidad_remitida = detalle.cantidad_entregada
-
-
 async def transition_estado(session: AsyncSession, pedido: Pedido, nuevo_estado: str) -> Pedido:
     current = pedido.estado
 
     if nuevo_estado == "CANCELADO":
         if current in ("ENTREGADO", "CANCELADO"):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Cannot cancel a pedido in estado '{current}'",
-            )
+            raise _unprocessable(f"Cannot cancel a pedido in estado '{current}'")
+        if pedido.fecha_facturado is not None:
+            raise _unprocessable("Cannot cancel a facturado pedido")
         pedido.estado = "CANCELADO"
         pedido.fecha_cancelado = datetime.now(timezone.utc)
         await session.commit()
@@ -257,12 +248,21 @@ async def transition_estado(session: AsyncSession, pedido: Pedido, nuevo_estado:
             detail=f"Invalid transition: '{current}' -> '{nuevo_estado}'. Expected next state: '{expected_next}'",
         )
 
-    if nuevo_estado in _REMITO_GENERATING_ESTADOS:
-        # Same transaction as the estado change: if generating the Remito
-        # fails, the whole transition rolls back (see design.md Risks).
-        await _generar_remito(session, pedido)
+    if nuevo_estado == "LISTO_PARA_ENTREGA" and not any(d.cantidad_entregada > 0 for d in pedido.detalles):
+        # Un envío listo para entregar se imprime como remito: sin nada
+        # entregado sería un remito vacío.
+        raise _unprocessable("No hay ninguna entrega registrada para dejar el pedido listo para entrega")
 
     pedido.estado = nuevo_estado
     setattr(pedido, PEDIDO_ESTADO_TIMESTAMP_FIELD[nuevo_estado], datetime.now(timezone.utc))
+    await session.commit()
+    return await get_pedido(session, pedido.id)
+
+
+async def registrar_facturacion(session: AsyncSession, pedido: Pedido, payload: PedidoFacturacionRequest) -> Pedido:
+    if payload.fecha_facturado is not None and pedido.estado not in _FACTURABLE_ESTADOS:
+        raise _unprocessable(f"Cannot facturar a pedido in estado '{pedido.estado}'")
+    pedido.fecha_facturado = payload.fecha_facturado
+    pedido.factura_referencia = payload.factura_referencia
     await session.commit()
     return await get_pedido(session, pedido.id)

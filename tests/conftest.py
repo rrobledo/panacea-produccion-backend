@@ -62,6 +62,7 @@ TRUNCATE_TABLES = [
     "costos_proveedor",
     "remitos_remito_detalle",
     "remitos_remito",
+    "pedidos_remito_legacy",
     "pedidos_pedido_detalle",
     "pedidos_pedido",
     "sucursales_sucursal",

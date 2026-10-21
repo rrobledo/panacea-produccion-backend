@@ -8,6 +8,7 @@ from app.schemas.pedido import (
     EstadoTransitionRequest,
     PedidoCreate,
     PedidoEntregaRequest,
+    PedidoFacturacionRequest,
     PedidoRead,
     PedidoUpdate,
 )
@@ -21,7 +22,11 @@ async def list_pedidos(
     tipo: str | None = None,
     cliente_id: int | None = None,
     sucursal_id: int | None = None,
+    origen_sucursal_id: int | None = None,
     estado: str | None = None,
+    es_remito: bool | None = None,
+    facturado: bool | None = Query(None, description="true: con fecha_facturado; false: sin facturar"),
+    remito_legacy_id: int | None = Query(None, description="Número de un remito anterior a la unificación"),
     fecha_desde: datetime | None = Query(None, description="Filter by fecha_entrega >= fecha_desde"),
     fecha_hasta: datetime | None = Query(None, description="Filter by fecha_entrega <= fecha_hasta"),
     skip: int = Query(0, ge=0),
@@ -33,7 +38,11 @@ async def list_pedidos(
         tipo=tipo,
         cliente_id=cliente_id,
         sucursal_id=sucursal_id,
+        origen_sucursal_id=origen_sucursal_id,
         estado=estado,
+        es_remito=es_remito,
+        facturado=facturado,
+        remito_legacy_id=remito_legacy_id,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
         skip=skip,
@@ -72,10 +81,19 @@ async def registrar_entrega(
     return PedidoRead.from_orm_row(pedido)
 
 
+@router.patch("/{pedido_id}/facturacion", response_model=PedidoRead)
+async def registrar_facturacion(
+    pedido_id: int, payload: PedidoFacturacionRequest, session: AsyncSession = Depends(get_session)
+):
+    pedido = await service.get_pedido(session, pedido_id)
+    pedido = await service.registrar_facturacion(session, pedido, payload)
+    return PedidoRead.from_orm_row(pedido)
+
+
 @router.put("/{pedido_id}", response_model=PedidoRead)
 async def update_pedido(pedido_id: int, payload: PedidoUpdate, session: AsyncSession = Depends(get_session)):
     pedido = await service.get_pedido(session, pedido_id)
-    service.ensure_pendiente(pedido)
+    service.ensure_editable(pedido)
     pedido = await service.update_pedido(session, pedido, payload)
     return PedidoRead.from_orm_row(pedido)
 
@@ -83,6 +101,6 @@ async def update_pedido(pedido_id: int, payload: PedidoUpdate, session: AsyncSes
 @router.delete("/{pedido_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_pedido(pedido_id: int, session: AsyncSession = Depends(get_session)):
     pedido = await service.get_pedido(session, pedido_id)
-    service.ensure_pendiente(pedido)
+    service.ensure_editable(pedido)
     await session.delete(pedido)
     await session.commit()
