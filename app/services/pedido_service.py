@@ -1,14 +1,20 @@
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.pedido import Pedido, PedidoDetalle, PedidoRemitoLegacy
 from app.models.productos import Productos
 from app.models.sucursal import Sucursal
-from app.schemas.pedido import PedidoCreate, PedidoEntregaRequest, PedidoFacturacionRequest, PedidoUpdate
+from app.schemas.pedido import (
+    PedidoAgregarDetallesRequest,
+    PedidoCreate,
+    PedidoEntregaRequest,
+    PedidoFacturacionRequest,
+    PedidoUpdate,
+)
 from app.schemas.vocab import PEDIDO_ESTADO_TIMESTAMP_FIELD, PEDIDO_VALID_TRANSITIONS, REMITO_ESTADO_INICIAL
 
 # Estados en los que un envío puede marcarse como facturado — ver
@@ -86,6 +92,7 @@ async def list_pedidos(
     origen_sucursal_id: int | None = None,
     estado: str | None = None,
     es_remito: bool | None = None,
+    como_remito: bool | None = None,
     facturado: bool | None = None,
     remito_legacy_id: int | None = None,
     fecha_desde: datetime | None = None,
@@ -106,6 +113,11 @@ async def list_pedidos(
         stmt = stmt.where(Pedido.estado == estado)
     if es_remito is not None:
         stmt = stmt.where(Pedido.es_remito == es_remito)
+    if como_remito is not None:
+        # Remito directo o pedido que ya llegó a LISTO_PARA_ENTREGA (se
+        # imprime como remito), aunque después se haya entregado o cancelado.
+        es_remito_expr = or_(Pedido.es_remito.is_(True), Pedido.fecha_listo_para_entrega.is_not(None))
+        stmt = stmt.where(es_remito_expr if como_remito else ~es_remito_expr)
     if facturado is not None:
         stmt = stmt.where(Pedido.fecha_facturado.is_not(None) if facturado else Pedido.fecha_facturado.is_(None))
     if remito_legacy_id is not None:
@@ -179,6 +191,42 @@ async def update_pedido(session: AsyncSession, pedido: Pedido, payload: PedidoUp
             if producto_id not in vistos:
                 await session.delete(detalle)
 
+    await session.commit()
+    return await get_pedido(session, pedido.id)
+
+
+async def agregar_detalles(session: AsyncSession, pedido: Pedido, payload: PedidoAgregarDetallesRequest) -> Pedido:
+    """Agrega productos a un pedido EN_PREPARACION sin tocar las líneas que ya
+    tiene; las nuevas quedan con su propia fecha_creacion, posterior a
+    fecha_en_preparacion, que las identifica como agregadas."""
+    if pedido.es_remito or pedido.estado != "EN_PREPARACION":
+        raise _unprocessable("Products can only be added to pedidos in 'EN_PREPARACION' estado")
+    if not payload.detalles:
+        raise _unprocessable("detalles must not be empty")
+
+    existentes = {d.producto_id for d in pedido.detalles}
+    nuevos: set[int] = set()
+    for item in payload.detalles:
+        if item.cantidad_pedida <= 0:
+            raise _unprocessable(f"cantidad_pedida must be > 0 for producto_id {item.producto_id}")
+        if item.cantidad_entregada < 0:
+            raise _unprocessable(f"cantidad_entregada cannot be negative for producto_id {item.producto_id}")
+        if item.producto_id in existentes or item.producto_id in nuevos:
+            raise _unprocessable(f"producto_id {item.producto_id} is already in this pedido")
+        nuevos.add(item.producto_id)
+
+    now = datetime.now(timezone.utc)
+    for item in payload.detalles:
+        session.add(
+            PedidoDetalle(
+                pedido_id=pedido.id,
+                producto_id=item.producto_id,
+                cantidad_pedida=item.cantidad_pedida,
+                cantidad_entregada=item.cantidad_entregada,
+                observaciones=item.observaciones,
+                fecha_creacion=now,
+            )
+        )
     await session.commit()
     return await get_pedido(session, pedido.id)
 

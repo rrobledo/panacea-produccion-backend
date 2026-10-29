@@ -312,3 +312,53 @@ async def test_crear_pedido_ignora_cantidad_entregada_del_payload(client, sessio
         client, 33, detalles=[{"producto_id": p1.id, "cantidad_pedida": 5, "cantidad_entregada": 5}]
     )
     assert pedido["detalles"][0]["cantidad_entregada"] == 0
+
+
+async def test_agregar_productos_en_preparacion(client, session):
+    await _make_cliente(session, 40)
+    pan = await _make_producto(session)
+    torta = await _make_producto(session, codigo="P2", nombre="Torta")
+    pedido = await _create_pedido(client, 40, detalles=[{"producto_id": pan.id, "cantidad_pedida": 3}])
+    en_prep = (
+        await client.patch(f"/costos/pedidos/{pedido['id']}/estado", json={"nuevo_estado": "EN_PREPARACION"})
+    ).json()
+
+    resp = await client.post(
+        f"/costos/pedidos/{pedido['id']}/detalles",
+        json={"detalles": [{"producto_id": torta.id, "cantidad_pedida": 2}]},
+    )
+    assert resp.status_code == 200, resp.json()
+    detalles = {d["producto_id"]: d for d in resp.json()["detalles"]}
+    assert detalles[pan.id]["cantidad_pedida"] == 3
+    assert detalles[pan.id]["fecha_creacion"] == pedido["detalles"][0]["fecha_creacion"]
+    assert detalles[torta.id]["cantidad_pedida"] == 2
+    def _dt(s):
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+    assert _dt(detalles[torta.id]["fecha_creacion"]) >= _dt(en_prep["fecha_en_preparacion"])
+
+
+async def test_agregar_producto_repetido_es_rechazado(client, session):
+    await _make_cliente(session, 41)
+    pan = await _make_producto(session)
+    pedido = await _create_pedido(client, 41, detalles=[{"producto_id": pan.id, "cantidad_pedida": 3}])
+    await client.patch(f"/costos/pedidos/{pedido['id']}/estado", json={"nuevo_estado": "EN_PREPARACION"})
+
+    resp = await client.post(
+        f"/costos/pedidos/{pedido['id']}/detalles",
+        json={"detalles": [{"producto_id": pan.id, "cantidad_pedida": 2}]},
+    )
+    assert resp.status_code == 422
+
+
+async def test_agregar_productos_fuera_de_preparacion_es_rechazado(client, session):
+    await _make_cliente(session, 42)
+    pan = await _make_producto(session)
+    torta = await _make_producto(session, codigo="P2", nombre="Torta")
+    pedido = await _create_pedido(client, 42, detalles=[{"producto_id": pan.id, "cantidad_pedida": 3}])
+
+    resp = await client.post(
+        f"/costos/pedidos/{pedido['id']}/detalles",
+        json={"detalles": [{"producto_id": torta.id, "cantidad_pedida": 2}]},
+    )
+    assert resp.status_code == 422

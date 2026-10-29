@@ -174,3 +174,10 @@ class PedidoEntregaLinea(BaseModel):
 
 class PedidoEntregaRequest(BaseModel):
     lineas: list[PedidoEntregaLinea]
+
+
+class PedidoAgregarDetallesRequest(BaseModel):
+    """Productos agregados a un pedido EN_PREPARACION — ver
+    pedido_service.agregar_detalles."""
+
+    detalles: list[PedidoDetalleCreate]

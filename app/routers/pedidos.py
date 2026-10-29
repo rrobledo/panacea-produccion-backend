@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps import get_session
 from app.schemas.pedido import (
     EstadoTransitionRequest,
+    PedidoAgregarDetallesRequest,
     PedidoCreate,
     PedidoEntregaRequest,
     PedidoFacturacionRequest,
@@ -25,6 +26,9 @@ async def list_pedidos(
     origen_sucursal_id: int | None = None,
     estado: str | None = None,
     es_remito: bool | None = None,
+    como_remito: bool | None = Query(
+        None, description="true: remitos directos y pedidos que ya pasaron a LISTO_PARA_ENTREGA"
+    ),
     facturado: bool | None = Query(None, description="true: con fecha_facturado; false: sin facturar"),
     remito_legacy_id: int | None = Query(None, description="Número de un remito anterior a la unificación"),
     fecha_desde: datetime | None = Query(None, description="Filter by fecha_entrega >= fecha_desde"),
@@ -41,6 +45,7 @@ async def list_pedidos(
         origen_sucursal_id=origen_sucursal_id,
         estado=estado,
         es_remito=es_remito,
+        como_remito=como_remito,
         facturado=facturado,
         remito_legacy_id=remito_legacy_id,
         fecha_desde=fecha_desde,
@@ -78,6 +83,15 @@ async def registrar_entrega(
 ):
     pedido = await service.get_pedido(session, pedido_id)
     pedido = await service.registrar_entrega(session, pedido, payload)
+    return PedidoRead.from_orm_row(pedido)
+
+
+@router.post("/{pedido_id}/detalles", response_model=PedidoRead)
+async def agregar_detalles(
+    pedido_id: int, payload: PedidoAgregarDetallesRequest, session: AsyncSession = Depends(get_session)
+):
+    pedido = await service.get_pedido(session, pedido_id)
+    pedido = await service.agregar_detalles(session, pedido, payload)
     return PedidoRead.from_orm_row(pedido)
 
 

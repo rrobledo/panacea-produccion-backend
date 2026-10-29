@@ -429,3 +429,26 @@ async def test_reportes_de_pendientes_excluyen_remitos(client, session):
         "/costos/pedidos-reportes/productos-pendientes-por-dia", params={"fecha_desde": desde, "fecha_hasta": hasta}
     )
     assert resp.json() == []
+
+
+async def test_listar_como_remito_incluye_pedidos_que_pasaron_a_remito(client, session):
+    await _make_cliente(session, 19)
+    producto = await _make_producto(session)
+    remito = await _create_remito_cliente(client, 19, producto.id, 3)
+    entregado = await _pedido_entregado(client, 19, producto.id)
+    pendiente = (
+        await client.post(
+            "/costos/pedidos",
+            json={
+                "cliente_id": 19,
+                "vendedor": "Ana",
+                "fecha_entrega": datetime.now(timezone.utc).isoformat(),
+                "detalles": [{"producto_id": producto.id, "cantidad_pedida": 2}],
+            },
+        )
+    ).json()
+
+    como_remito = (await client.get("/costos/pedidos", params={"como_remito": True})).json()
+    assert {e["id"] for e in como_remito} == {remito["id"], entregado["id"]}
+    sin_remito = (await client.get("/costos/pedidos", params={"como_remito": False})).json()
+    assert [e["id"] for e in sin_remito] == [pendiente["id"]]
