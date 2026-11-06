@@ -167,10 +167,15 @@ async def update_pedido(session: AsyncSession, pedido: Pedido, payload: PedidoUp
         existentes = {d.producto_id: d for d in pedido.detalles}
         vistos: set[int] = set()
         for item in payload.detalles:
-            if item.cantidad_pedida <= 0 and item.cantidad_entregada <= 0:
+            if item.cantidad_pedida < 0 or item.cantidad_entregada < 0:
+                raise _unprocessable(f"cantidades cannot be negative for producto_id {item.producto_id}")
+            detalle = existentes.get(item.producto_id)
+            # Una línea nueva sin cantidades no se crea; una existente se
+            # conserva aunque quede en 0 entregado (en un remito, lo
+            # despachado puede corregirse a 0 sin perder el ítem).
+            if detalle is None and item.cantidad_pedida <= 0 and item.cantidad_entregada <= 0:
                 continue
             vistos.add(item.producto_id)
-            detalle = existentes.get(item.producto_id)
             if detalle is not None:
                 detalle.cantidad_pedida = item.cantidad_pedida
                 if pedido.es_remito:
@@ -245,12 +250,13 @@ async def registrar_entrega(session: AsyncSession, pedido: Pedido, payload: Pedi
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"detalle_id {linea.detalle_id} does not belong to this pedido",
             )
-        if linea.cantidad_entregada < detalle.cantidad_entregada:
+        if linea.cantidad_entregada < 0:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"cantidad_entregada cannot decrease for detalle_id {linea.detalle_id}",
+                detail=f"cantidad_entregada cannot be negative for detalle_id {linea.detalle_id}",
             )
-        # cantidad_entregada puede superar cantidad_pedida — un pedido puede
+        # cantidad_entregada puede bajar (hasta 0, p. ej. para corregir una
+        # carga) y puede superar cantidad_pedida — un pedido puede
         # entregarse de más respecto a lo originalmente solicitado.
         detalle.cantidad_entregada = linea.cantidad_entregada
 

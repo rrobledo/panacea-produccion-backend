@@ -119,7 +119,7 @@ async def test_entrega_mayor_a_lo_pedido_es_permitida(client, session):
     assert resp.json()["detalles"][0]["cantidad_entregada"] == 11
 
 
-async def test_entrega_menor_a_lo_ya_entregado_es_rechazada(client, session):
+async def test_entrega_puede_bajar_hasta_cero(client, session):
     await _make_cliente(session, 7)
     producto = await _make_producto(session)
     pedido = await _create_pedido(client, 7, detalles=[{"producto_id": producto.id, "cantidad_pedida": 10}])
@@ -129,7 +129,20 @@ async def test_entrega_menor_a_lo_ya_entregado_es_rechazada(client, session):
     )
 
     resp = await client.patch(
-        f"/costos/pedidos/{pedido['id']}/entrega", json={"lineas": [{"detalle_id": detalle_id, "cantidad_entregada": 3}]}
+        f"/costos/pedidos/{pedido['id']}/entrega", json={"lineas": [{"detalle_id": detalle_id, "cantidad_entregada": 0}]}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["detalles"][0]["cantidad_entregada"] == 0
+
+
+async def test_entrega_negativa_es_rechazada(client, session):
+    await _make_cliente(session, 7)
+    producto = await _make_producto(session)
+    pedido = await _create_pedido(client, 7, detalles=[{"producto_id": producto.id, "cantidad_pedida": 10}])
+    detalle_id = pedido["detalles"][0]["id"]
+
+    resp = await client.patch(
+        f"/costos/pedidos/{pedido['id']}/entrega", json={"lineas": [{"detalle_id": detalle_id, "cantidad_entregada": -1}]}
     )
     assert resp.status_code == 422
 
