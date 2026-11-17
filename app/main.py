@@ -42,6 +42,7 @@ from app.routers import (
     profile,
     programacion,
     proveedores,
+    referencias_articulos,
     sucursales,
     ubicaciones,
     ventas,
@@ -102,6 +103,7 @@ app.include_router(ordenes_compra.router, prefix="/costos")
 app.include_router(productos.router, prefix="/costos")
 app.include_router(procesos.router, prefix="/costos")
 app.include_router(articulos.router, prefix="/costos")
+app.include_router(referencias_articulos.router, prefix="/costos")
 app.include_router(maquinaria.router, prefix="/costos")
 app.include_router(costeo_grafo.router, prefix="/costos")
 app.include_router(costeo.router, prefix="/costos")
